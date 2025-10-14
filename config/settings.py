@@ -2,6 +2,7 @@
 Django settings for Rent Me Naija project.
 """
 
+import os
 from decouple import config
 from pathlib import Path
 
@@ -30,8 +31,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'rest_framework.authtoken',
-    'cloudinary',              # Cloudinary SDK
-    'cloudinary_storage',      # Django Cloudinary storage
+    'cloudinary',
+    'cloudinary_storage',
 
     # Local apps
     'accounts',
@@ -70,16 +71,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database
+# -------------------------------
+# DATABASE CONFIGURATION
+# -------------------------------
+# Use dj-database-url to parse DATABASE_URL (required for Render)
+import dj_database_url
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='5432'),
-    }
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL', default='sqlite:///db.sqlite3')
+    )
 }
 
 # Password validation
