@@ -130,11 +130,20 @@ REST_FRAMEWORK = {
     ],
 }
 
+# -------------------------------
+# -------------------------------
 # CORS – RESTRICTED FOR PRODUCTION (NO TRAILING SPACES!)
-CORS_ALLOWED_ORIGINS = [
-    "https://cityfarmexport.com.ng",
-    "https://www.cityfarmexport.com.ng",
-]
+# -------------------------------
+if DEBUG:
+    # Allow all origins during local development (for web frontend devs)
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    # Only allow your official frontend domains in production
+    CORS_ALLOWED_ORIGINS = [
+        "https://rentmenaija.com",
+        "https://www.rentmenaija.com",
+        # Add more domains here later if needed (e.g., Netlify, Vercel)
+    ]
 
 # Email Backend (Gmail SMTP)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
