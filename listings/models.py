@@ -1,3 +1,4 @@
+# listings/models.py
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -82,10 +83,15 @@ class PropertyDraft(models.Model):
             self.save(update_fields=['images'])
 
     def __str__(self):
-        return f"Draft: {self.title or 'Untitled'} by {self.user.username}"
+        user = self.user
+        # Prefer full name, fall back to email (never username)
+        display_name = user.get_full_name().strip() or user.email
+        return f"Draft: {self.title or 'Untitled'} by {display_name}"
 
     class Meta:
         ordering = ['-updated_at']
+        verbose_name = "Property Draft"
+        verbose_name_plural = "Property Drafts"
 
 
 class Property(models.Model):
@@ -106,6 +112,8 @@ class Property(models.Model):
     published_at = models.DateTimeField(null=True, blank=True)
 
     def approve(self, admin_user):
+        if self.status != 'pending':
+            return
         self.status = 'approved'
         self.approved_by = admin_user
         self.approved_at = timezone.now()
@@ -113,10 +121,17 @@ class Property(models.Model):
         self.save()
 
     def reject(self, admin_user, reason=""):
+        if self.status != 'pending':
+            return
         self.status = 'rejected'
         self.approved_by = admin_user
         self.rejected_reason = reason
         self.save()
 
     def __str__(self):
-        return f"Property: {self.draft.title} [{self.status}]"
+        title = self.draft.title or 'Untitled'
+        return f"Property: {title} [{self.get_status_display()}]"
+
+    class Meta:
+        verbose_name = "Approved Property"
+        verbose_name_plural = "Approved Properties"

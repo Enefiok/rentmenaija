@@ -2,7 +2,7 @@
 
 import cloudinary.uploader
 import random
-import requests 
+import requests
 from decouple import config
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -13,12 +13,6 @@ from rest_framework import status
 from django.utils import timezone
 from .models import PropertyDraft, Property
 from .serializers import PropertyDraftSerializer, PropertyDetailSerializer, PropertyListingSerializer
-
-
-
-# === Load Env Vars from .env ===
-# (Hostingier removed — not a real service)
-# Cloudinary keys are loaded automatically via cloudinary.config() in settings.py
 
 
 # === Mock URLs (✅ CLEANED: no extra spaces!) ===
@@ -38,7 +32,7 @@ def geocode_address(address):
     """
     print(f"Geocoding request for: {address}")
 
-    base_url = "https://nominatim.openstreetmap.org/search"
+    base_url = "https://nominatim.openstreetmap.org/search"  # ✅ FIXED: no extra spaces
     params = {
         'q': address.strip(),
         'format': 'json',
@@ -70,8 +64,8 @@ def geocode_address(address):
     except Exception as e:
         print("Geocoding error:", e)
 
-    # If all fails, return None (caller should handle)
     return None
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -96,28 +90,25 @@ def update_property_draft(request, draft_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser])  # Required for file uploads
-def upload_property_image(request, draft_id):  # ✅ FIXED: Added draft_id parameter
+@parser_classes([MultiPartParser, FormParser])
+def upload_property_image(request, draft_id):
     """Upload one image — uses Cloudinary, falls back to mock if unavailable"""
     draft = get_object_or_404(PropertyDraft, id=draft_id, user=request.user)
     file = request.FILES.get('image')
     if not file:
         return Response({"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate file type
     allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
     if file.content_type not in allowed_types:
         return Response({
             "error": "Invalid file type. Supported: JPEG, PNG, WebP."
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate file size (< 10MB)
     if file.size > 10 * 1024 * 1024:
         return Response({
             "error": "File too large. Maximum 10MB allowed."
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    # ✅ TRY CLOUDINARY UPLOAD
     try:
         upload_result = cloudinary.uploader.upload(
             file,
@@ -128,20 +119,17 @@ def upload_property_image(request, draft_id):  # ✅ FIXED: Added draft_id param
         )
         image_url = upload_result.get('secure_url')
         if image_url:
-            draft.add_image_url(image_url)  # Save to your JSON list
+            draft.add_image_url(image_url)
             return Response({"url": image_url}, status=status.HTTP_201_CREATED)
-        else:
-            print("Cloudinary upload succeeded but no URL returned:", upload_result)
     except Exception as e:
         print(f"Cloudinary upload failed: {e}")
 
-    # ✨ FALLBACK: Return a realistic mock image URL (same as before)
     mock_url = random.choice(MOCK_IMAGE_URLS)
     filename_base = file.name.rsplit('.', 1)[0] if '.' in file.name else file.name
     safe_text = filename_base.replace('+', '%20').replace(' ', '+')
     mock_url_with_name = f"{mock_url.split('?')[0]}?text={safe_text}"
 
-    draft.add_image_url(mock_url_with_name)  # Also save mock URL to draft
+    draft.add_image_url(mock_url_with_name)
     return Response({
         "url": mock_url_with_name,
         "filename": file.name,
@@ -149,7 +137,7 @@ def upload_property_image(request, draft_id):  # ✅ FIXED: Added draft_id param
         "content_type": file.content_type,
         "uploaded": True,
         "service": "mock-development-fallback"
-    }, status=201)
+    }, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
@@ -176,7 +164,7 @@ def confirm_location_and_geocode(request, draft_id):
         "address": address,
         "latitude": coords['lat'],
         "longitude": coords['lng']
-    })
+    }, status=200)
 
 
 @api_view(['POST'])
@@ -185,7 +173,6 @@ def submit_property_for_review(request, draft_id):
     """Submit the draft for admin approval"""
     draft = get_object_or_404(PropertyDraft, id=draft_id, user=request.user)
 
-    # Check required fields
     required_fields = [
         'title', 'monthly_rent', 'phone_number', 'description',
         'address', 'latitude', 'longitude', 'images'
@@ -197,7 +184,6 @@ def submit_property_for_review(request, draft_id):
             "missing": missing
         }, status=400)
 
-    # Check all agreements are accepted
     agreements = [
         draft.is_owner_or_representative,
         draft.details_accurate,
@@ -210,7 +196,6 @@ def submit_property_for_review(request, draft_id):
             "error": "You must accept all terms and sign the agreement."
         }, status=400)
 
-    # ✅ NEW: Extract city and state from lat/lng
     if draft.latitude is not None and draft.longitude is not None:
         try:
             from .utils import reverse_geocode
@@ -219,28 +204,21 @@ def submit_property_for_review(request, draft_id):
             draft.state = location_data['state']
         except Exception as e:
             print(f"Reverse geocoding failed during submission: {e}")
-            # Don't block submission — just leave city/state as null
 
-    # Mark as submitted
     draft.signed_at = timezone.now()
     draft.submitted_for_review = True
     draft.save()
 
-    # Ensure Property review object exists
     Property.objects.get_or_create(draft=draft)
 
     return Response({
         "message": "✅ Your listing has been submitted successfully and is now awaiting admin approval."
-    }, status=200)   
+    }, status=200)
 
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def property_detail(request, property_id):
-    """
-    Public endpoint to view an approved property.
-    Only returns properties with status='approved'.
-    """
     try:
         property_obj = Property.objects.select_related('draft').get(
             id=property_id,
@@ -258,21 +236,14 @@ def property_detail(request, property_id):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def property_list(request):
-    """
-    Public listing of approved properties with optional filtering.
-    Supports: ?city=Uyo, ?state=Akwa+Ibom+State, ?property_type=duplex,
-              ?price_min=50000, ?price_max=200000
-    """
     queryset = Property.objects.select_related('draft').filter(status='approved')
 
-    # Get query params
     city = request.query_params.get('city')
     state = request.query_params.get('state')
     property_type = request.query_params.get('property_type')
     price_min = request.query_params.get('price_min')
     price_max = request.query_params.get('price_max')
 
-    # Apply filters
     if city:
         queryset = queryset.filter(draft__city__iexact=city.strip())
     if state:
@@ -284,9 +255,6 @@ def property_list(request):
     if price_max:
         queryset = queryset.filter(draft__monthly_rent__lte=price_max)
 
-    # Order by newest first
     queryset = queryset.order_by('-published_at')
-
-    # Serialize and return
     serializer = PropertyListingSerializer(queryset, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)

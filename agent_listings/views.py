@@ -1,27 +1,26 @@
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-from decouple import config
-import requests
+# agent_listings/views.py
+
+import cloudinary.uploader
 import random
-from django.utils import timezone  # ← For auto-setting signed_at
+import requests
+from decouple import config
+from django.shortcuts import get_object_or_404
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework import status
+from django.utils import timezone
 
-from .models import AgentPropertyDraft, AgentProperty  # ✅ Added AgentProperty import
-from .serializers import AgentPropertyDraftSerializer
+from .models import AgentPropertyDraft, AgentProperty
+from .serializers import (
+    AgentPropertyDraftSerializer,
+    AgentPropertyDetailSerializer,
+    AgentPropertyListingSerializer
+)
 
 
-# === Load Env Vars from .env ===
-try:
-    HOSTINGIER_API_KEY = config('HOSTINGIER_API_KEY')
-    HOSTINGIER_UPLOAD_URL = config('HOSTINGIER_UPLOAD_URL')
-    HOSTINGIER_CONFIGURED = bool(HOSTINGIER_API_KEY) and bool(HOSTINGIER_UPLOAD_URL)
-except Exception as e:
-    print(f"Error loading Hostingier config: {e}")
-    HOSTINGIER_CONFIGURED = False
-
-
-# === Mock URLs for Development (✅ Fixed: No leading/trailing spaces) ===
+# === Mock URLs (✅ NO extra spaces!) ===
 MOCK_IMAGE_URLS = [
     "https://via.placeholder.com/800x600.png?text=Living+Room",
     "https://via.placeholder.com/800x600.png?text=Kitchen",
@@ -31,204 +30,206 @@ MOCK_IMAGE_URLS = [
 ]
 
 
-# === 1. Start a new agent listing draft ===
+def geocode_address(address):
+    """Geocode Nigerian address using Nominatim."""
+    print(f"Geocoding request for: {address}")
+    base_url = "https://nominatim.openstreetmap.org/search"  # ✅ FIXED
+    params = {
+        'q': address.strip(),
+        'format': 'json',
+        'limit': 1,
+        'countrycodes': 'NG',
+    }
+    headers = {
+        'User-Agent': 'RentMeNaija/1.0 (scienceprince123@gmail.com)'
+    }
+    try:
+        response = requests.get(base_url, params=params, headers=headers, timeout=10)
+        if response.status_code == 200:
+            results = response.json()
+            if results:
+                loc = results[0]
+                return {'lat': float(loc['lat']), 'lng': float(loc['lon'])}
+    except Exception as e:
+        print("Geocoding error:", e)
+    return None
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def start_agent_listing(request):
-    """
-    Creates a new draft linked to the authenticated agent.
-    """
     draft = AgentPropertyDraft.objects.create(agent=request.user)
     serializer = AgentPropertyDraftSerializer(draft)
-    return Response(serializer.data, status=201)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-# === 2. View or Update basic details of the draft ===
-@api_view(['GET', 'PUT', 'PATCH'])  # ✅ Supports viewing and partial/full updates
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def update_agent_property_draft(request, draft_id):
-    """
-    - GET: Retrieve the draft (for viewing)
-    - PUT/PATCH: Partially or fully update an existing draft (owned by the agent).
-    """
     draft = get_object_or_404(AgentPropertyDraft, id=draft_id, agent=request.user)
-
-    if request.method == 'GET':
-        serializer = AgentPropertyDraftSerializer(draft)
-        return Response(serializer.data)
-
-    # Handle PUT/PATCH updates
     serializer = AgentPropertyDraftSerializer(draft, data=request.data, partial=True)
     if serializer.is_valid():
-        # Auto-set signed_at if digital_signature is provided and not already set
         if serializer.validated_data.get('digital_signature') and not draft.signed_at:
             draft.signed_at = timezone.now()
         serializer.save()
         return Response(serializer.data)
-    return Response(serializer.errors, status=400)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# === 3. Upload image to the property draft via Hostingier (Backend Upload) ===
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def upload_agent_property_image(request, draft_id):
-    """
-    Securely upload an image through Django to Hostingier.
-    - Validates file type and size
-    - Uses secret API key
-    - Falls back to mock URL if Hostingier fails
-    """
     draft = get_object_or_404(AgentPropertyDraft, id=draft_id, agent=request.user)
-
     file = request.FILES.get('image')
     if not file:
-        return Response({"error": "No image provided"}, status=400)
+        return Response({"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate file type
     allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
     if file.content_type not in allowed_types:
-        return Response({
-            "error": "Invalid file type. Supported: JPEG, PNG, WebP."
-        }, status=400)
+        return Response({"error": "Invalid file type. Supported: JPEG, PNG, WebP."}, status=400)
 
-    # Validate file size (< 10MB)
     if file.size > 10 * 1024 * 1024:
-        return Response({
-            "error": "File too large. Maximum 10MB allowed."
-        }, status=400)
+        return Response({"error": "File too large. Maximum 10MB allowed."}, status=400)
 
-    # Try to upload to Hostingier if configured
-    if HOSTINGIER_CONFIGURED:
-        try:
-            headers = {'Authorization': f'Bearer {HOSTINGIER_API_KEY}'}
-            files = {'file': (file.name, file.file, file.content_type)}
-            response = requests.post(
-                HOSTINGIER_UPLOAD_URL,
-                headers=headers,
-                files=files,
-                timeout=30
-            )
+    try:
+        upload_result = cloudinary.uploader.upload(
+            file,
+            folder="rentmenaija/agent_property_drafts",
+            resource_type="image",
+            overwrite=False,
+            unique_filename=True
+        )
+        image_url = upload_result.get('secure_url')
+        if image_url:
+            draft.add_image_url(image_url)
+            return Response({"url": image_url}, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        print(f"Cloudinary upload failed: {e}")
 
-            if response.status_code in [200, 201]:
-                data = response.json()
-                image_url = data.get('url') or data.get('data', {}).get('url')
-                if image_url:
-                    images = draft.images or []
-                    images.append(image_url)
-                    draft.images = images
-                    draft.save()
-
-                    return Response({
-                        "message": "Image uploaded successfully",
-                        "url": image_url,
-                        "images": draft.images
-                    }, status=201)
-                print("Hostingier responded but no URL found:", data)
-
-            else:
-                print("Hostingier upload failed:", response.status_code, response.text)
-
-        except Exception as e:
-            print(f"Error connecting to Hostingier: {e}")
-
-    # ✨ Fallback: Use mock image URL
-    mock_url = random.choice(MOCK_IMAGE_URLS).strip()
+    mock_url = random.choice(MOCK_IMAGE_URLS)
     filename_base = file.name.rsplit('.', 1)[0] if '.' in file.name else file.name
     safe_text = filename_base.replace('+', '%20').replace(' ', '+')
     mock_url_with_name = f"{mock_url.split('?')[0]}?text={safe_text}"
-
-    images = draft.images or []
-    images.append(mock_url_with_name)
-    draft.images = images
-    draft.save()
+    draft.add_image_url(mock_url_with_name)
 
     return Response({
-        "message": "Image added (mock used - Hostingier not available)",
         "url": mock_url_with_name,
-        "images": draft.images
-    }, status=201)
+        "filename": file.name,
+        "size": file.size,
+        "content_type": file.content_type,
+        "uploaded": True,
+        "service": "mock-development-fallback"
+    }, status=status.HTTP_201_CREATED)
 
 
-# === 4. Confirm location and save geocoordinates ===
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def confirm_agent_location_and_geocode(request, draft_id):
-    """
-    Save latitude and longitude after frontend geocoding.
-    Optionally validate or enrich address here in the future.
-    """
     draft = get_object_or_404(AgentPropertyDraft, id=draft_id, agent=request.user)
+    address = request.data.get('address')
+    if not address:
+        return Response({"error": "Address is required"}, status=400)
 
-    latitude = request.data.get('latitude')
-    longitude = request.data.get('longitude')
-    address = request.data.get('address', draft.address)
+    coords = geocode_address(address)
+    if not coords:
+        return Response({"error": "Could not find coordinates for this address."}, status=400)
 
-    if latitude is None or longitude is None:
-        return Response({"error": "Latitude and longitude are required."}, status=400)
-
-    try:
-        draft.latitude = float(latitude)
-        draft.longitude = float(longitude)
-        draft.address = address
-        draft.save()
-    except (ValueError, TypeError):
-        return Response({"error": "Invalid latitude or longitude."}, status=400)
+    draft.address = address
+    draft.latitude = coords['lat']
+    draft.longitude = coords['lng']
+    draft.save()
 
     return Response({
-        "message": "Location saved successfully",
-        "address": draft.address,
-        "latitude": draft.latitude,
-        "longitude": draft.longitude
+        "address": address,
+        "latitude": coords['lat'],
+        "longitude": coords['lng']
     }, status=200)
 
 
-# === 5. Submit draft for admin review ===
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def submit_agent_property_for_review(request, draft_id):
-    """
-    Final step: Mark draft as submitted for review.
-    Validates required fields before submission.
-    """
     draft = get_object_or_404(AgentPropertyDraft, id=draft_id, agent=request.user)
 
-    # Required fields check
-    errors = []
+    required_fields = [
+        'landlord_name', 'landlord_phone', 'title', 'monthly_rent',
+        'address', 'latitude', 'longitude', 'images'
+    ]
+    missing = [f for f in required_fields if not getattr(draft, f)]
+    if missing:
+        return Response({"error": "Missing required fields", "missing": missing}, status=400)
 
-    if not draft.landlord_name:
-        errors.append("landlord_name is required.")
-    if not draft.landlord_phone:
-        errors.append("landlord_phone is required.")
-    if not draft.title:
-        errors.append("title is required.")
-    if draft.monthly_rent is None:
-        errors.append("monthly_rent is required.")
-    if not draft.address:
-        errors.append("address is required.")
-    if draft.latitude is None or draft.longitude is None:
-        errors.append("Valid location (latitude/longitude) is required.")
-    if not draft.images:
-        errors.append("At least one image is required.")
-    if not draft.is_authorised_to_list:
-        errors.append("You must confirm you're authorized to list for the landlord.")
-    if not draft.details_accurate:
-        errors.append("You must confirm that all details are accurate.")
-    if not draft.assume_responsibility_for_fraud:
-        errors.append("You must accept responsibility for fraudulent listings.")
-    if not draft.agrees_to_escrow_process:
-        errors.append("You must agree to the escrow process.")
+    agreements = [
+        draft.is_authorised_to_list,
+        draft.details_accurate,
+        draft.assume_responsibility_for_fraud,
+        draft.agrees_to_escrow_process,
+        draft.digital_signature
+    ]
+    if not all(agreements):
+        return Response({"error": "You must accept all terms and provide a digital signature."}, status=400)
 
-    if errors:
-        return Response({"errors": errors}, status=400)
+    if draft.latitude is not None and draft.longitude is not None:
+        try:
+            from listings.utils import reverse_geocode
+            location_data = reverse_geocode(draft.latitude, draft.longitude)
+            draft.city = location_data['city']
+            draft.state = location_data['state']
+            draft.save(update_fields=['city', 'state'])
+        except Exception as e:
+            print(f"[Agent] Reverse geocoding failed: {e}")
 
-    # All good — submit!
+    draft.signed_at = timezone.now()
     draft.submitted_for_review = True
-    draft.save()
+    draft.save(update_fields=['signed_at', 'submitted_for_review'])
 
-    # ✅ CRITICAL: Create AgentProperty so it appears in admin review queue
     AgentProperty.objects.get_or_create(draft=draft)
 
     return Response({
-        "message": "Your listing has been submitted for review.",
-        "submitted_at": draft.updated_at.isoformat()
+        "message": "✅ Your agent listing has been submitted successfully and is now awaiting admin approval."
     }, status=200)
+
+
+# === PUBLIC ENDPOINTS ===
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def agent_property_detail(request, property_id):
+    try:
+        prop = AgentProperty.objects.select_related('draft').get(
+            id=property_id,
+            status='approved'
+        )
+    except AgentProperty.DoesNotExist:
+        return Response({"error": "Property not found or not approved."}, status=404)
+
+    serializer = AgentPropertyDetailSerializer(prop)
+    return Response(serializer.data, status=200)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def agent_property_list(request):
+    queryset = AgentProperty.objects.select_related('draft').filter(status='approved')
+
+    city = request.query_params.get('city')
+    state = request.query_params.get('state')
+    property_type = request.query_params.get('property_type')
+    price_min = request.query_params.get('price_min')
+    price_max = request.query_params.get('price_max')
+
+    if city:
+        queryset = queryset.filter(draft__city__iexact=city.strip())
+    if state:
+        queryset = queryset.filter(draft__state__iexact=state.strip())
+    if property_type:
+        queryset = queryset.filter(draft__property_type=property_type.strip())
+    if price_min:
+        queryset = queryset.filter(draft__monthly_rent__gte=price_min)
+    if price_max:
+        queryset = queryset.filter(draft__monthly_rent__lte=price_max)
+
+    queryset = queryset.order_by('-published_at')
+    serializer = AgentPropertyListingSerializer(queryset, many=True)
+    return Response(serializer.data, status=200)

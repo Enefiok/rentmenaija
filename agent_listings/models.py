@@ -1,5 +1,4 @@
 # agent_listings/models.py
-
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -16,6 +15,17 @@ LEASE_TERM_CHOICES = [
     ('6_months', '6 Months'),
     ('1_year', '1 Year'),
     ('2_years', '2 Years'),
+]
+
+# ✅ ADD PROPERTY_TYPE_CHOICES (copied from listings/)
+PROPERTY_TYPE_CHOICES = [
+    ('apartment', 'Apartment'),
+    ('duplex', 'Duplex'),
+    ('bungalow', 'Bungalow'),
+    ('terraced_house', 'Terraced House'),
+    ('mansion', 'Mansion'),
+    ('mini_flat', 'Mini Flat'),
+    ('self_contain', 'Self Contain'),
 ]
 
 
@@ -38,13 +48,18 @@ class AgentPropertyDraft(models.Model):
     house_rules = models.TextField(blank=True, null=True)
     images = models.JSONField(default=list, blank=True)
 
+    # ✅ ADD property_type
+    property_type = models.CharField(max_length=50, choices=PROPERTY_TYPE_CHOICES, blank=True, null=True)
+
     # Location
     address = models.CharField(max_length=500, blank=True, null=True)
     latitude = models.FloatField(blank=True, null=True)
     longitude = models.FloatField(blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
 
-    # Agent Agreements (more formalized)
-    is_authorised_to_list = models.BooleanField(default=False)  # "I have permission from the landlord"
+    # Agent Agreements
+    is_authorised_to_list = models.BooleanField(default=False)
     details_accurate = models.BooleanField(default=False)
     assume_responsibility_for_fraud = models.BooleanField(default=False)
     agrees_to_escrow_process = models.BooleanField(default=False)
@@ -57,10 +72,14 @@ class AgentPropertyDraft(models.Model):
     submitted_for_review = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"Agent Draft: {self.title or 'Untitled'} by {self.agent.username} (for {self.landlord_name})"
+        agent = self.agent
+        agent_display = agent.get_full_name().strip() or agent.email
+        return f"Agent Draft: {self.title or 'Untitled'} by {agent_display} (for {self.landlord_name})"
 
     class Meta:
         ordering = ['-updated_at']
+        verbose_name = "Agent Property Draft"
+        verbose_name_plural = "Agent Property Drafts"
 
 
 class AgentProperty(models.Model):
@@ -83,6 +102,8 @@ class AgentProperty(models.Model):
     published_at = models.DateTimeField(null=True, blank=True)
 
     def approve(self, admin_user):
+        if self.status != 'pending':
+            return
         self.status = 'approved'
         self.approved_by = admin_user
         self.approved_at = timezone.now()
@@ -90,10 +111,17 @@ class AgentProperty(models.Model):
         self.save()
 
     def reject(self, admin_user, reason=""):
+        if self.status != 'pending':
+            return
         self.status = 'rejected'
         self.approved_by = admin_user
         self.rejected_reason = reason
         self.save()
 
     def __str__(self):
-        return f"[AGENT] {self.draft.title} → {self.status}"
+        title = self.draft.title or 'Untitled'
+        return f"[AGENT] {title} → {self.get_status_display()}"
+
+    class Meta:
+        verbose_name = "Agent-Submitted Property"
+        verbose_name_plural = "Agent-Submitted Properties"
