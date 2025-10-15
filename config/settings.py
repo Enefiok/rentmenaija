@@ -43,6 +43,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # ← SERVES STATIC FILES IN PRODUCTION
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -129,7 +130,7 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS – RESTRICTED FOR PRODUCTION (no trailing spaces!)
+# CORS – RESTRICTED FOR PRODUCTION (NO TRAILING SPACES!)
 CORS_ALLOWED_ORIGINS = [
     "https://cityfarmexport.com.ng",
     "https://www.cityfarmexport.com.ng",
@@ -161,6 +162,9 @@ cloudinary.config(
 
 # Use Cloudinary as default storage for media files
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+# Static file serving in production
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Security settings for production (HTTPS, secure cookies, etc.)
 if not DEBUG:
