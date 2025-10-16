@@ -32,12 +32,12 @@ urlpatterns = [
     # Custom API Endpoints (Register, Login, Profile, Verify Email)
     path('api/', include('accounts.urls')),
 
-    
     path('api/listings/', include('listings.urls')),
 
     path('api/agent-listings/', include('agent_listings.urls')),
 ]
 
-# Serve static files during development
+# Serve static and media files during development ONLY
 if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
