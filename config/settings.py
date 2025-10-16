@@ -156,7 +156,7 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@rentmenaija.com')
 
 # Frontend URL
-FRONTEND_URL = config('FRONTEND_URL', default='https://cityfarmexport.com.ng')
+FRONTEND_URL = config('FRONTEND_URL', default='https://rentmenaija-a4ed.onrender.com')
 
 # API Keys
 OPENCAGE_API_KEY = config('OPENCAGE_API_KEY', default=None)
