@@ -3,6 +3,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
+# Currency choices
 CURRENCY_CHOICES = [
     ('NGN', 'Nigerian Naira'),
     ('USD', 'US Dollar'),
@@ -10,6 +11,7 @@ CURRENCY_CHOICES = [
     ('KES', 'Kenyan Shilling'),
 ]
 
+# Lease term preferences
 LEASE_TERM_CHOICES = [
     ('monthly', 'Monthly'),
     ('6_months', '6 Months'),
@@ -17,7 +19,7 @@ LEASE_TERM_CHOICES = [
     ('2_years', '2 Years'),
 ]
 
-# ✅ ADD PROPERTY_TYPE_CHOICES (copied from listings/)
+# Property type choices (copied from listings/)
 PROPERTY_TYPE_CHOICES = [
     ('apartment', 'Apartment'),
     ('duplex', 'Duplex'),
@@ -46,7 +48,7 @@ class AgentPropertyDraft(models.Model):
     description = models.TextField(blank=True, null=True)
     known_issues = models.TextField(blank=True, null=True)
     house_rules = models.TextField(blank=True, null=True)
-    images = models.JSONField(default=list, blank=True)
+    images = models.JSONField(default=list, blank=True)  # Stores Cloudinary image URLs
 
     # ✅ ADD property_type
     property_type = models.CharField(max_length=50, choices=PROPERTY_TYPE_CHOICES, blank=True, null=True)
@@ -71,6 +73,20 @@ class AgentPropertyDraft(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     submitted_for_review = models.BooleanField(default=False)
 
+    def add_image_url(self, url):
+        """Safely append a Cloudinary image URL to the images list."""
+        if not isinstance(self.images, list):
+            self.images = []
+        if url and url not in self.images:
+            self.images.append(url)
+        self.save(update_fields=['images'])
+
+    def remove_image_url(self, url):
+        """Remove a Cloudinary image URL from the images list."""
+        if isinstance(self.images, list) and url in self.images:
+            self.images.remove(url)
+            self.save(update_fields=['images'])
+
     def __str__(self):
         agent = self.agent
         agent_display = agent.get_full_name().strip() or agent.email
@@ -84,13 +100,11 @@ class AgentPropertyDraft(models.Model):
 
 class AgentProperty(models.Model):
     draft = models.OneToOneField(AgentPropertyDraft, on_delete=models.CASCADE)
-
     status = models.CharField(
         max_length=20,
         choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')],
         default='pending'
     )
-
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
