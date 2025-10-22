@@ -5,6 +5,8 @@ Django settings for Rent Me Naija project.
 import os
 from decouple import config
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +40,8 @@ INSTALLED_APPS = [
     'accounts',
     'listings', 
     'agent_listings', 
+    'hotels',
+    'verification',
 ]
 
 MIDDLEWARE = [
@@ -184,3 +188,7 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+
+
+YV_API_KEY = os.getenv("YV_API_KEY")
+YV_BASE_URL = os.getenv("YV_BASE_URL")

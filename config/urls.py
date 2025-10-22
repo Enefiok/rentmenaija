@@ -35,6 +35,11 @@ urlpatterns = [
     path('api/listings/', include('listings.urls')),
 
     path('api/agent-listings/', include('agent_listings.urls')),
+
+    path('api/hotels/', include('hotels.urls')),
+
+    # config/urls.py
+    path('api/verify/', include('verification.urls')),
 ]
 
 # Serve static and media files during development ONLY
