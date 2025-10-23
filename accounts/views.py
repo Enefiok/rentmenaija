@@ -178,3 +178,18 @@ def verify_email(request, token):
         # 🔁 Invalid/expired token
         redirect_url = f"{settings.FRONTEND_URL}/?message=invalid"
         return HttpResponseRedirect(redirect_url)
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_user_phone(request):
+    phone = request.data.get('phone')
+    if not phone:
+        return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Basic validation: must start with +234 and be 13–14 digits
+    if not phone.startswith('+234') or not phone[4:].isdigit() or len(phone) < 13 or len(phone) > 14:
+        return Response({"error": "Please enter a valid Nigerian phone number (e.g., +2348012345678)"}, status=status.HTTP_400_BAD_REQUEST)
+
+    request.user.phone = phone
+    request.user.save(update_fields=['phone'])
+    return Response({"message": "Phone number saved successfully"}, status=status.HTTP_200_OK)

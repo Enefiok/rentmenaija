@@ -1,4 +1,3 @@
-# accounts/models.py
 import uuid
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
@@ -42,9 +41,17 @@ class User(AbstractUser):
     city = models.CharField(max_length=50)
     state = models.CharField(max_length=50)
 
+    # NEW: Phone number for Youverify & profile
+    phone = models.CharField(max_length=15, blank=True)
+
     # Email verification
     is_verified = models.BooleanField(default=False)
     verification_token = models.CharField(max_length=64, blank=True, null=True, unique=True)
+
+    # Identity verification via Youverify (already added earlier)
+    is_identity_verified = models.BooleanField(default=False)
+    identity_verification_reference = models.CharField(max_length=255, blank=True, null=True)
+    identity_verified_at = models.DateTimeField(blank=True, null=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'city', 'state']
