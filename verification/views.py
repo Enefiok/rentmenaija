@@ -28,7 +28,7 @@ def initiate_verification(request):
     email = user.email
     reference = f"user_{user.id}_{int(timezone.now().timestamp())}"
 
-    url = f"{settings.YV_BASE_URL}/hosted/verification"
+    url = f"{settings.YV_BASE_URL}/hosted/verifications"
     headers = {
         'Authorization': f'Bearer {settings.YV_API_KEY}',
         'Content-Type': 'application/json'
