@@ -13,7 +13,7 @@ class HotelFeatureInline(admin.TabularInline):
     readonly_fields = ('category', 'name', 'is_custom')
 
 
-class RoomTypeInline(admin.TabTabularInline):
+class RoomTypeInline(admin.TabularInline):
     model = RoomType
     extra = 0
     fields = ('name', 'max_guests', 'price_per_night', 'available_count', 'created_at')
