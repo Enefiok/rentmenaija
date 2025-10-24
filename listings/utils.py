@@ -29,7 +29,7 @@ def reverse_geocode(lat, lng):
 
     # === 2. Fallback: Nominatim (free, no API key needed) ===
     try:
-        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lng}&accept-language=en"
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lng}&countrycodes=ng&accept-language=en"
         response = requests.get(
             url,
             headers={'User-Agent': 'RentMeNaija'},  # Required by Nominatim
