@@ -32,6 +32,14 @@ class HotelListing(models.Model):
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
 
+    # Legal Declarations (from UI checkboxes & signature)
+    is_owner_or_representative = models.BooleanField(default=False)
+    details_accurate = models.BooleanField(default=False)
+    assume_responsibility_for_fraud = models.BooleanField(default=False)
+    agrees_to_escrow_process = models.BooleanField(default=False)
+    digital_signature = models.CharField(max_length=255, blank=True)
+    signed_at = models.DateTimeField(null=True, blank=True)
+
     # Status & Timestamps
     STATUS_CHOICES = [
         ('draft', 'Draft'),

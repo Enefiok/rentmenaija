@@ -1,11 +1,8 @@
 import cloudinary.uploader
-import random
 import requests
-from decouple import config
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
@@ -14,27 +11,17 @@ from .models import HotelListing, HotelFeature, RoomType
 from .serializers import HotelListingSerializer, RoomTypeSerializer, HotelFeatureSerializer
 
 
-# === Mock Image URLs (for fallback during dev) ===
-MOCK_IMAGE_URLS = [
-    "https://via.placeholder.com/800x600.png?text=Hotel+Lobby",
-    "https://via.placeholder.com/800x600.png?text=Room+View",
-    "https://via.placeholder.com/800x600.png?text=Pool",
-    "https://via.placeholder.com/800x600.png?text=Restaurant",
-    "https://via.placeholder.com/800x600.png?text=Exterior",
-]
-
-
 def geocode_address(address):
-    """Geocode Nigerian address using Nominatim (same as your agent flow)."""
-    base_url = "https://nominatim.openstreetmap.org/search"  # ✅ NO extra spaces
+    """Geocode Nigerian address using Nominatim."""
+    base_url = "https://nominatim.openstreetmap.org/search"  # ✅ Fixed: no spaces
     params = {
         'q': address.strip(),
         'format': 'json',
         'limit': 1,
-        'countrycodes': 'NG',
+        'countrycodes': 'ng',  # ✅ Lowercase 'ng' for Nominatim
     }
     headers = {
-        'User-Agent': 'RentMeNaija/1.0 (elongate371@gmail.com)'
+        'User-Agent': 'RentMeNaija/1.0'  # ✅ No email
     }
     try:
         response = requests.get(base_url, params=params, headers=headers, timeout=10)
@@ -89,12 +76,11 @@ def set_hotel_location(request, hotel_id):
     hotel.longitude = coords['lng']
     hotel.save(update_fields=['address', 'latitude', 'longitude'])
 
-    # Optional: Reverse geocode to get city/state (like your agent flow)
     try:
         from listings.utils import reverse_geocode
         loc_data = reverse_geocode(hotel.latitude, hotel.longitude)
-        hotel.city = loc_data.get('city', '')
-        hotel.state = loc_data.get('state', '')
+        hotel.city = loc_data.get('city', '') or ''
+        hotel.state = loc_data.get('state', '') or ''
         hotel.save(update_fields=['city', 'state'])
     except Exception as e:
         print(f"[Hotel] Reverse geocoding failed: {e}")
@@ -120,6 +106,28 @@ def add_hotel_room_type(request, hotel_id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# === STEP 4b: Upload Room Image ===
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_room_image(request, hotel_id, room_id):
+    hotel = get_object_or_404(HotelListing, id=hotel_id, owner=request.user, status='draft')
+    room = get_object_or_404(RoomType, id=room_id, hotel=hotel)
+    
+    if 'image' not in request.FILES:
+        return Response({"error": "Image file required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        upload_result = cloudinary.uploader.upload(
+            request.FILES['image'],
+            folder=f"rentmenaija/hotel_rooms/{hotel.id}/{room.id}/"
+        )
+        room.images.append(upload_result['secure_url'])
+        room.save(update_fields=['images'])
+        return Response({"image_url": upload_result['secure_url']}, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({"error": "Image upload failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # === STEP 5: Add Hotel Features ===
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -129,9 +137,7 @@ def add_hotel_features(request, hotel_id):
     if not isinstance(features_data, list):
         return Response({"error": "Features must be a list"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Clear existing features
     hotel.features.all().delete()
-
     for feat in features_data:
         HotelFeature.objects.create(
             hotel=hotel,
@@ -139,15 +145,50 @@ def add_hotel_features(request, hotel_id):
             name=feat.get('name', ''),
             is_custom=feat.get('is_custom', False)
         )
-
     return Response({"message": "Features saved successfully"}, status=status.HTTP_200_OK)
 
 
-# === STEP 6: Submit for Approval ===
+# === STEP 6: Sign Legal Declarations ===
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def sign_hotel_declarations(request, hotel_id):
+    hotel = get_object_or_404(HotelListing, id=hotel_id, owner=request.user, status='draft')
+    
+    required_fields = [
+        'is_owner_or_representative',
+        'details_accurate',
+        'assume_responsibility_for_fraud',
+        'agrees_to_escrow_process',
+        'digital_signature'
+    ]
+    
+    for field in required_fields:
+        if field not in request.data:
+            return Response({"error": f"{field} is required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    hotel.is_owner_or_representative = request.data['is_owner_or_representative']
+    hotel.details_accurate = request.data['details_accurate']
+    hotel.assume_responsibility_for_fraud = request.data['assume_responsibility_for_fraud']
+    hotel.agrees_to_escrow_process = request.data['agrees_to_escrow_process']
+    hotel.digital_signature = request.data['digital_signature']
+    hotel.signed_at = timezone.now()
+    hotel.save(update_fields=[
+        'is_owner_or_representative', 'details_accurate', 'assume_responsibility_for_fraud',
+        'agrees_to_escrow_process', 'digital_signature', 'signed_at'
+    ])
+    
+    return Response({"message": "Declarations signed successfully"}, status=status.HTTP_200_OK)
+
+
+# === STEP 7: Submit for Approval ===
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def submit_hotel_for_review(request, hotel_id):
     hotel = get_object_or_404(HotelListing, id=hotel_id, owner=request.user, status='draft')
+
+    # Must have signed declarations
+    if not getattr(hotel, 'signed_at', None):
+        return Response({"error": "Legal declarations must be signed before submission"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Validate required fields
     required = ['name', 'property_type', 'phone', 'address', 'latitude', 'longitude']
@@ -155,21 +196,17 @@ def submit_hotel_for_review(request, hotel_id):
     if missing:
         return Response({"error": "Missing required fields", "missing": missing}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Must have at least one room type
     if not hotel.room_types.exists():
         return Response({"error": "At least one room type is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Submit
     hotel.status = 'submitted'
     hotel.save(update_fields=['status'])
-
     return Response({
         "message": "✅ Your hotel listing has been submitted successfully and is now awaiting admin approval."
     }, status=status.HTTP_200_OK)
 
 
-# === PUBLIC VIEWS (For Guests) ===
-
+# === PUBLIC VIEWS ===
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def hotel_list(request):
@@ -202,17 +239,10 @@ def hotel_list(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def hotel_detail(request, hotel_id):
-    """
-    Show hotel detail.
-    - Guests: only approved listings.
-    - Owner: can view their own draft for preview.
-    """
     try:
         if request.user.is_authenticated:
-            # Owner can preview their own draft or approved listing
             hotel = HotelListing.objects.get(id=hotel_id, owner=request.user)
         else:
-            # Public users only see approved listings
             hotel = HotelListing.objects.get(id=hotel_id, status='approved')
     except HotelListing.DoesNotExist:
         return Response({"error": "Hotel not found."}, status=status.HTTP_404_NOT_FOUND)

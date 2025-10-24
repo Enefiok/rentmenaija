@@ -8,7 +8,9 @@ urlpatterns = [
     path('<int:hotel_id>/basic/', views.update_hotel_basic_info, name='update-basic'),
     path('<int:hotel_id>/location/', views.set_hotel_location, name='set-location'),
     path('<int:hotel_id>/rooms/', views.add_hotel_room_type, name='add-room'),
+    path('<int:hotel_id>/room/<int:room_id>/upload-image/', views.upload_room_image, name='upload-room-image'),  # ✅ NEW
     path('<int:hotel_id>/features/', views.add_hotel_features, name='add-features'),
+    path('<int:hotel_id>/sign-declarations/', views.sign_hotel_declarations, name='sign-declarations'),  # ✅ NEW
     path('<int:hotel_id>/submit/', views.submit_hotel_for_review, name='submit-hotel'),
 
     # Public Views (Guests)

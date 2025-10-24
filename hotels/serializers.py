@@ -50,11 +50,19 @@ class HotelListingSerializer(serializers.ModelSerializer):
             'room_types',
             'created_at',
             'updated_at',
-            'published_at'
+            'published_at',
+            # Legal declaration fields (from UI)
+            'is_owner_or_representative',
+            'details_accurate',
+            'assume_responsibility_for_fraud',
+            'agrees_to_escrow_process',
+            'digital_signature',
+            'signed_at'
         ]
         read_only_fields = [
             'id', 'status', 'created_at', 'updated_at', 'published_at',
-            'latitude', 'longitude', 'city', 'state'  # These are set via location step
+            'latitude', 'longitude', 'city', 'state',
+            'signed_at'  # Set automatically when declarations are signed
         ]
 
     def create(self, validated_data):
@@ -81,13 +89,13 @@ class HotelListingSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
 
-        # Update features (optional: full replace)
+        # Update features (full replace if provided)
         if features_data is not None:
             instance.features.all().delete()
             for feature_data in features_data:
                 HotelFeature.objects.create(hotel=instance, **feature_data)
 
-        # Update room types (optional: full replace)
+        # Update room types (full replace if provided)
         if room_types_data is not None:
             instance.room_types.all().delete()
             for room_data in room_types_data:
