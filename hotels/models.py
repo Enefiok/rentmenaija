@@ -32,6 +32,9 @@ class HotelListing(models.Model):
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
 
+    # Hotel-level images (exterior, lobby, pool, etc.)
+    images = models.JSONField(default=list) 
+
     # Legal Declarations (from UI checkboxes & signature)
     is_owner_or_representative = models.BooleanField(default=False)
     details_accurate = models.BooleanField(default=False)

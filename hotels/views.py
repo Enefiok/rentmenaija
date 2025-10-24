@@ -249,3 +249,29 @@ def hotel_detail(request, hotel_id):
 
     serializer = HotelListingSerializer(hotel)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# In hotels/views.py, after other views
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_hotel_image(request, hotel_id):
+    hotel = get_object_or_404(HotelListing, id=hotel_id, owner=request.user, status='draft')
+    
+    if 'image' not in request.FILES:
+        return Response({"error": "Image file required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        upload_result = cloudinary.uploader.upload(
+            request.FILES['image'],
+            folder=f"rentmenaija/hotel_drafts/{hotel.id}/"
+        )
+        # Append to hotel.images (you'll need to add this field to model)
+        if not hasattr(hotel, 'images'):
+            hotel.images = []
+        hotel.images.append(upload_result['secure_url'])
+        hotel.save(update_fields=['images'])
+        
+        return Response({"image_url": upload_result['secure_url']}, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({"error": "Image upload failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

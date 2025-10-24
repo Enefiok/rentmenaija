@@ -57,12 +57,15 @@ class HotelListingSerializer(serializers.ModelSerializer):
             'assume_responsibility_for_fraud',
             'agrees_to_escrow_process',
             'digital_signature',
-            'signed_at'
+            'signed_at',
+            # Hotel-level images (exterior, lobby, pool, etc.)
+            'images'  # ✅ Added
         ]
         read_only_fields = [
             'id', 'status', 'created_at', 'updated_at', 'published_at',
             'latitude', 'longitude', 'city', 'state',
-            'signed_at'  # Set automatically when declarations are signed
+            'signed_at',
+            'images'  # ✅ Optional: make read-only if frontend only uploads via dedicated endpoint
         ]
 
     def create(self, validated_data):
