@@ -33,19 +33,21 @@ def initiate_verification(request):
     # ✅ Detect environment from BASE_URL
     is_sandbox = "sandbox" in settings.YV_BASE_URL.lower()
 
+    # ✅ Use correct token header (not Bearer)
     headers = {
-        "Authorization": f"Bearer {settings.YV_API_KEY}",
+        "Token": f"{settings.YV_API_KEY}",
         "Content-Type": "application/json",
     }
 
     if is_sandbox:
         # 🧪 Sandbox testing endpoint — mock verification only
-        url = f"{settings.YV_BASE_URL}/identities/ng/nin/verification"
+        url = f"{settings.YV_BASE_URL}/identity/ng/nin"
         payload = {
-            "id": "12345678901"  # sample NIN for sandbox test
+            "id": "12345678901",   # fake test NIN
+            "isSubjectConsent": True
         }
     else:
-        # 🌍 Live environment — real hosted verification
+        # 🌍 Live environment — hosted verification
         url = f"{settings.YV_BASE_URL}/hosted/verifications"
         payload = {
             "reference": reference,
@@ -58,7 +60,7 @@ def initiate_verification(request):
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
 
-        # Try to parse JSON, fallback if invalid
+        # Try parsing JSON safely
         try:
             data = response.json()
         except json.JSONDecodeError:
@@ -77,7 +79,7 @@ def initiate_verification(request):
                     "data": data
                 }, status=status.HTTP_200_OK)
 
-            # Live hosted verification returns a redirect URL
+            # Live environment: redirect link for hosted verification
             if data.get("data", {}).get("verificationUrl"):
                 return Response({
                     "environment": "live",
