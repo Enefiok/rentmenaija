@@ -19,7 +19,7 @@ def initiate_verification(request):
     """
     user = request.user
 
-    # Get user's phone number safely
+    # ✅ Get user's phone number safely
     phone = getattr(user, 'phone', None) or getattr(user, 'phone_number', None)
     if not phone:
         return Response(
@@ -30,7 +30,7 @@ def initiate_verification(request):
     email = user.email
     reference = f"user_{user.id}_{int(timezone.now().timestamp())}"
 
-    # Detect environment from BASE_URL
+    # ✅ Detect environment from BASE_URL
     is_sandbox = "sandbox" in settings.YV_BASE_URL.lower()
 
     headers = {
@@ -39,8 +39,8 @@ def initiate_verification(request):
     }
 
     if is_sandbox:
-        # 🧪 Sandbox testing endpoint — for mock verification only
-        url = f"{settings.YV_BASE_URL}/identities/ng/nin"
+        # 🧪 Sandbox testing endpoint — mock verification only
+        url = f"{settings.YV_BASE_URL}/identities/ng/nin/verification"
         payload = {
             "id": "12345678901"  # sample NIN for sandbox test
         }
@@ -56,42 +56,46 @@ def initiate_verification(request):
         }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        data = response.json()
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
 
-        if response.status_code == 200:
-            # Sandbox gives verification result directly
-            if is_sandbox:
-                return Response(
-                    {"environment": "sandbox", "data": data},
-                    status=status.HTTP_200_OK,
-                )
-
-            # Live gives a verification URL for redirect
-            if data.get("data", {}).get("verificationUrl"):
-                return Response(
-                    {
-                        "environment": "live",
-                        "verification_url": data["data"]["verificationUrl"],
-                    },
-                    status=status.HTTP_200_OK,
-                )
-
-        # If we get here, response is unexpected
-        return Response(
-            {
-                "error": "Unexpected response from Youverify.",
+        # Try to parse JSON, fallback if invalid
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            return Response({
+                "error": "Youverify returned a non-JSON response.",
                 "status_code": response.status_code,
-                "details": data,
-            },
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
+                "raw_response": response.text,
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+        # ✅ Success
+        if response.status_code == 200:
+            if is_sandbox:
+                # Direct mock verification result
+                return Response({
+                    "environment": "sandbox",
+                    "data": data
+                }, status=status.HTTP_200_OK)
+
+            # Live hosted verification returns a redirect URL
+            if data.get("data", {}).get("verificationUrl"):
+                return Response({
+                    "environment": "live",
+                    "verification_url": data["data"]["verificationUrl"]
+                }, status=status.HTTP_200_OK)
+
+        # ⚠️ Unexpected response
+        return Response({
+            "error": "Unexpected response from Youverify.",
+            "status_code": response.status_code,
+            "details": data,
+        }, status=status.HTTP_502_BAD_GATEWAY)
 
     except requests.exceptions.RequestException as e:
-        return Response(
-            {"error": "Failed to connect to Youverify.", "details": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        return Response({
+            "error": "Failed to connect to Youverify.",
+            "details": str(e),
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt
@@ -114,7 +118,6 @@ def verification_webhook(request):
     try:
         user_id = int(reference.split("_")[1])
         from accounts.models import User
-
         user = User.objects.get(id=user_id)
     except (ValueError, User.DoesNotExist):
         return JsonResponse({"error": "User not found"}, status=404)
