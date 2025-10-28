@@ -33,21 +33,21 @@ def initiate_verification(request):
     # ✅ Detect environment from BASE_URL
     is_sandbox = "sandbox" in settings.YV_BASE_URL.lower()
 
-    # ✅ Use correct token header (not Bearer)
     headers = {
-        "Token": f"{settings.YV_API_KEY}",
+        "Authorization": f"Bearer {settings.YV_API_KEY}",
         "Content-Type": "application/json",
     }
 
     if is_sandbox:
         # 🧪 Sandbox testing endpoint — mock verification only
+        # Use one of Youverify’s approved test IDs
         url = f"{settings.YV_BASE_URL}/identity/ng/nin"
         payload = {
-            "id": "12345678901",   # fake test NIN
-            "isSubjectConsent": True
+            "id": "11111111111",      # ✅ Approved sandbox test NIN
+            "isSubjectConsent": True  # Required field for sandbox testing
         }
     else:
-        # 🌍 Live environment — hosted verification
+        # 🌍 Live environment — real hosted verification
         url = f"{settings.YV_BASE_URL}/hosted/verifications"
         payload = {
             "reference": reference,
@@ -60,7 +60,7 @@ def initiate_verification(request):
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
 
-        # Try parsing JSON safely
+        # Try parsing JSON, fallback if invalid
         try:
             data = response.json()
         except json.JSONDecodeError:
@@ -70,21 +70,20 @@ def initiate_verification(request):
                 "raw_response": response.text,
             }, status=status.HTTP_502_BAD_GATEWAY)
 
-        # ✅ Success
-        if response.status_code == 200:
-            if is_sandbox:
-                # Direct mock verification result
-                return Response({
-                    "environment": "sandbox",
-                    "data": data
-                }, status=status.HTTP_200_OK)
+        # ✅ Handle sandbox mock verification success
+        if is_sandbox and response.status_code == 200:
+            return Response({
+                "environment": "sandbox",
+                "message": "Mock verification completed successfully.",
+                "data": data
+            }, status=status.HTTP_200_OK)
 
-            # Live environment: redirect link for hosted verification
-            if data.get("data", {}).get("verificationUrl"):
-                return Response({
-                    "environment": "live",
-                    "verification_url": data["data"]["verificationUrl"]
-                }, status=status.HTTP_200_OK)
+        # ✅ Handle live verification (with redirect URL)
+        if not is_sandbox and data.get("data", {}).get("verificationUrl"):
+            return Response({
+                "environment": "live",
+                "verification_url": data["data"]["verificationUrl"]
+            }, status=status.HTTP_200_OK)
 
         # ⚠️ Unexpected response
         return Response({
