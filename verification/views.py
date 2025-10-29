@@ -14,12 +14,11 @@ from django.utils import timezone
 @permission_classes([IsAuthenticated])
 def initiate_verification(request):
     """
-    Initiate Youverify verification.
-    Automatically detects Sandbox vs Live mode.
+    Initiate Youverify verification (auto-detects Sandbox vs Live mode).
     """
     user = request.user
 
-    # ✅ Get user's phone number safely
+    # ✅ Safely get user's phone number
     phone = getattr(user, 'phone', None) or getattr(user, 'phone_number', None)
     if not phone:
         return Response(
@@ -27,7 +26,7 @@ def initiate_verification(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    email = user.email
+    email = user.email or "noemail@rentmenaija.com"
     reference = f"user_{user.id}_{int(timezone.now().timestamp())}"
 
     # ✅ Detect environment from BASE_URL
@@ -39,28 +38,27 @@ def initiate_verification(request):
     }
 
     if is_sandbox:
-        # 🧪 Sandbox testing endpoint — mock verification only
-        # Use one of Youverify’s approved test IDs
+        # 🧪 Sandbox mock endpoint
         url = f"{settings.YV_BASE_URL}/identity/ng/nin"
         payload = {
-            "id": "11111111111",      # ✅ Approved sandbox test NIN
-            "isSubjectConsent": True  # Required field for sandbox testing
+            "id": "11111111111",      # ✅ Approved sandbox NIN test ID
+            "isSubjectConsent": True  # Required for sandbox calls
         }
     else:
-        # 🌍 Live environment — real hosted verification
+        # 🌍 Live hosted verification
         url = f"{settings.YV_BASE_URL}/hosted/verifications"
         payload = {
             "reference": reference,
             "email": email,
             "phoneNumber": str(phone),
             "redirectUrl": "https://rentmenaija.com/verify/success",
-            "callbackUrl": "https://rentmenaija-a4ed.onrender.com/api/verify/webhook/",
+            "callbackUrl": "https://rentmenaija-a4ed.onrender.com/api/verify/webhook/"
         }
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
 
-        # Try parsing JSON, fallback if invalid
+        # Try to parse JSON safely
         try:
             data = response.json()
         except json.JSONDecodeError:
@@ -70,26 +68,33 @@ def initiate_verification(request):
                 "raw_response": response.text,
             }, status=status.HTTP_502_BAD_GATEWAY)
 
-        # ✅ Handle sandbox mock verification success
-        if is_sandbox and response.status_code == 200:
-            return Response({
-                "environment": "sandbox",
-                "message": "Mock verification completed successfully.",
-                "data": data
-            }, status=status.HTTP_200_OK)
+        # ✅ Sandbox success
+        if is_sandbox:
+            if response.status_code == 200:
+                return Response({
+                    "environment": "sandbox",
+                    "message": "Mock verification completed successfully.",
+                    "data": data
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "error": "Sandbox verification failed.",
+                    "status_code": response.status_code,
+                    "details": data
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Handle live verification (with redirect URL)
+        # ✅ Live verification success
         if not is_sandbox and data.get("data", {}).get("verificationUrl"):
             return Response({
                 "environment": "live",
                 "verification_url": data["data"]["verificationUrl"]
             }, status=status.HTTP_200_OK)
 
-        # ⚠️ Unexpected response
+        # ⚠️ Unexpected
         return Response({
             "error": "Unexpected response from Youverify.",
             "status_code": response.status_code,
-            "details": data,
+            "details": data
         }, status=status.HTTP_502_BAD_GATEWAY)
 
     except requests.exceptions.RequestException as e:
@@ -103,7 +108,7 @@ def initiate_verification(request):
 @api_view(["POST"])
 def verification_webhook(request):
     """
-    Receive verification result from Youverify (for live environment).
+    Handle callback from Youverify (for live environment only).
     """
     try:
         data = json.loads(request.body.decode("utf-8"))
