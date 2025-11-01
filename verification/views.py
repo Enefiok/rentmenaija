@@ -14,7 +14,8 @@ from django.utils import timezone
 @permission_classes([IsAuthenticated])
 def initiate_verification(request):
     """
-    Initiate Youverify verification (auto-detects Sandbox vs Live mode).
+    Initiate Youverify HOSTED verification flow (works in both sandbox and live).
+    Redirects user to Youverify's UI for ID entry + selfie.
     """
     user = request.user
 
@@ -29,36 +30,32 @@ def initiate_verification(request):
     email = user.email or "noemail@rentmenaija.com"
     reference = f"user_{user.id}_{int(timezone.now().timestamp())}"
 
-    # ✅ Detect environment from BASE_URL
-    is_sandbox = "sandbox" in settings.YV_BASE_URL.lower()
-
     headers = {
         "Authorization": f"Bearer {settings.YV_API_KEY}",
         "Content-Type": "application/json",
     }
 
-    if is_sandbox:
-        # 🧪 Sandbox mock endpoint
-        url = f"{settings.YV_BASE_URL}/identity/ng/nin"
-        payload = {
-            "id": "11111111111",      # ✅ Approved sandbox NIN test ID
-            "isSubjectConsent": True  # Required for sandbox calls
-        }
-    else:
-        # 🌍 Live hosted verification
-        url = f"{settings.YV_BASE_URL}/hosted/verifications"
-        payload = {
-            "reference": reference,
-            "email": email,
-            "phoneNumber": str(phone),
-            "redirectUrl": "https://rentmenaija.com/verify/success",
-            "callbackUrl": "https://rentmenaija-a4ed.onrender.com/api/verify/webhook/"
-        }
+    # ✅ ALWAYS use the hosted KYC initiation endpoint — works in sandbox too!
+    url = f"{settings.YV_BASE_URL}/kyc/initiate"
+
+    # 🔧 Trim whitespace from URLs to avoid 400 errors
+    redirect_url = "https://rentmenaija.com/verify/success"
+    webhook_url = "https://rentmenaija-a4ed.onrender.com/api/verify/webhook/"
+
+    payload = {
+        "reference": reference,
+        "email": email,
+        "phoneNumber": str(phone),
+        "country": "NG",
+        "product_type": "nin",  # User enters NIN on Youverify's page
+        "redirectUrl": redirect_url,
+        "webhookUrl": webhook_url
+    }
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
 
-        # Try to parse JSON safely
+        # Parse response safely
         try:
             data = response.json()
         except json.JSONDecodeError:
@@ -68,34 +65,25 @@ def initiate_verification(request):
                 "raw_response": response.text,
             }, status=status.HTTP_502_BAD_GATEWAY)
 
-        # ✅ Sandbox success
-        if is_sandbox:
-            if response.status_code == 200:
+        # ✅ Check for successful hosted session creation
+        if response.status_code == 200:
+            verification_url = data.get("data", {}).get("verificationUrl")
+            if verification_url:
                 return Response({
-                    "environment": "sandbox",
-                    "message": "Mock verification completed successfully.",
-                    "data": data
+                    "verification_url": verification_url,
+                    "environment": "sandbox" if "sandbox" in settings.YV_BASE_URL else "live"
                 }, status=status.HTTP_200_OK)
             else:
                 return Response({
-                    "error": "Sandbox verification failed.",
-                    "status_code": response.status_code,
+                    "error": "Missing verificationUrl in Youverify response.",
                     "details": data
-                }, status=status.HTTP_400_BAD_REQUEST)
-
-        # ✅ Live verification success
-        if not is_sandbox and data.get("data", {}).get("verificationUrl"):
+                }, status=status.HTTP_502_BAD_GATEWAY)
+        else:
             return Response({
-                "environment": "live",
-                "verification_url": data["data"]["verificationUrl"]
-            }, status=status.HTTP_200_OK)
-
-        # ⚠️ Unexpected
-        return Response({
-            "error": "Unexpected response from Youverify.",
-            "status_code": response.status_code,
-            "details": data
-        }, status=status.HTTP_502_BAD_GATEWAY)
+                "error": "Youverify API request failed.",
+                "status_code": response.status_code,
+                "details": data
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     except requests.exceptions.RequestException as e:
         return Response({
@@ -108,27 +96,39 @@ def initiate_verification(request):
 @api_view(["POST"])
 def verification_webhook(request):
     """
-    Handle callback from Youverify (for live environment only).
+    Handle callback from Youverify (used in both sandbox and live).
     """
     try:
         data = json.loads(request.body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    reference = data.get("reference")
-    status_code = data.get("status")
+    # Extract data from webhook payload
+    event = data.get("event")
+    if event != "identity.completed":
+        return JsonResponse({"status": "ignored", "reason": "non-completion event"}, status=200)
 
-    if not reference or not reference.startswith("user_"):
-        return JsonResponse({"error": "Invalid reference"}, status=400)
+    verification_data = data.get("data", {})
+    reference = verification_data.get("reference")  # Note: some payloads nest reference inside "data"
+    status_code = verification_data.get("status")
+
+    # Fallback: try top-level reference if not in data
+    if not reference:
+        reference = data.get("reference")
+
+    if not reference or not str(reference).startswith("user_"):
+        return JsonResponse({"error": "Invalid or missing reference"}, status=400)
 
     try:
-        user_id = int(reference.split("_")[1])
+        user_id = int(str(reference).split("_")[1])
         from accounts.models import User
         user = User.objects.get(id=user_id)
-    except (ValueError, User.DoesNotExist):
+    except (ValueError, User.DoesNotExist, IndexError):
         return JsonResponse({"error": "User not found"}, status=404)
 
-    if status_code == "completed":
+    # ✅ Mark user as verified only if all checks passed
+    all_passed = verification_data.get("allValidationPassed", False)
+    if status_code == "found" and all_passed:
         user.is_identity_verified = True
         user.identity_verified_at = timezone.now()
         user.save(update_fields=["is_identity_verified", "identity_verified_at"])
