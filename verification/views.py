@@ -35,10 +35,10 @@ def initiate_verification(request):
         "Content-Type": "application/json",
     }
 
-    # ✅ ALWAYS use the hosted KYC initiation endpoint — works in sandbox too!
-    url = f"{settings.YV_BASE_URL}/kyc/initiate"
+    # ✅ CORRECT ENDPOINT: /hosted/verifications (not /kyc/initiate)
+    url = f"{settings.YV_BASE_URL}/hosted/verifications"
 
-    # 🔧 Trim whitespace from URLs to avoid 400 errors
+    # 🔧 TRIMMED URLs – no trailing spaces!
     redirect_url = "https://rentmenaija.com/verify/success"
     webhook_url = "https://rentmenaija-a4ed.onrender.com/api/verify/webhook/"
 
@@ -109,7 +109,7 @@ def verification_webhook(request):
         return JsonResponse({"status": "ignored", "reason": "non-completion event"}, status=200)
 
     verification_data = data.get("data", {})
-    reference = verification_data.get("reference")  # Note: some payloads nest reference inside "data"
+    reference = verification_data.get("reference")
     status_code = verification_data.get("status")
 
     # Fallback: try top-level reference if not in data
