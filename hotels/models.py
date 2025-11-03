@@ -96,3 +96,50 @@ class RoomType(models.Model):
 
     def __str__(self):
         return f"{self.name} at {self.hotel.name}"
+    
+
+
+    # Add this BELOW your existing models
+class HotelBooking(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='hotel_bookings'
+    )
+    room = models.ForeignKey(
+        RoomType,
+        on_delete=models.CASCADE,
+        related_name='bookings'
+    )
+    check_in = models.DateField()
+    check_out = models.DateField()
+    num_guests = models.PositiveIntegerField(default=1)
+    
+    # Payment & status
+    amount_paid_ngn = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending Payment'),
+            ('paid', 'Paid'),
+            ('cancelled', 'Cancelled'),
+            ('completed', 'Completed'),
+        ],
+        default='pending'
+    )
+    transaction_ref = models.CharField(max_length=100, unique=True)
+    
+    # User contact info (in case they booked as guest or email changed)
+    guest_full_name = models.CharField(max_length=255)
+    guest_email = models.EmailField()
+    guest_phone = models.CharField(max_length=20, blank=True)
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.guest_full_name} - {self.room.name} ({self.check_in} to {self.check_out})"
+    
+    @property
+    def nights(self):
+        return (self.check_out - self.check_in).days
