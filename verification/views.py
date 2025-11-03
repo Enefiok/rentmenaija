@@ -1,136 +1,118 @@
-import requests
-import json
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from django.conf import settings
-from django.utils import timezone
+# verification/views.py
 
+import logging
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.http import require_http_methods
+from .utils.youverify import verify_nin, face_match
+import base64
+import re
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def initiate_verification(request):
-    """
-    Initiate Youverify HOSTED verification flow (works in both sandbox and live).
-    Redirects user to Youverify's UI for ID entry + selfie.
-    """
-    user = request.user
+logger = logging.getLogger(__name__)
 
-    # ✅ Safely get user's phone number
-    phone = getattr(user, 'phone', None) or getattr(user, 'phone_number', None)
-    if not phone:
-        return Response(
-            {"error": "Phone number is required for identity verification."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+@csrf_protect
+@require_http_methods(["GET", "POST"])
+def verification_start(request):
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip()
+        phone = request.POST.get("phone", "").strip()
+        nin = request.POST.get("nin", "").strip()
 
-    email = user.email or "noemail@rentmenaija.com"
-    reference = f"user_{user.id}_{int(timezone.now().timestamp())}"
+        if not all([email, phone, nin]):
+            messages.error(request, "All fields are required.")
+            return render(request, "verification/start.html", {"email": email, "phone": phone, "nin": nin})
 
-    headers = {
-        "Authorization": f"Bearer {settings.YV_API_KEY}",
-        "Content-Type": "application/json",
-    }
+        if len(nin) != 11 or not nin.isdigit():
+            messages.error(request, "NIN must be 11 digits.")
+            return render(request, "verification/start.html", {"email": email, "phone": phone, "nin": nin})
 
-    # ✅ CORRECT ENDPOINT: /hosted/verifications (not /kyc/initiate)
-    url = f"{settings.YV_BASE_URL}/hosted/verifications"
-
-    # 🔧 TRIMMED URLs – no trailing spaces!
-    redirect_url = "https://rentmenaija.com/verify/success"
-    webhook_url = "https://rentmenaija-a4ed.onrender.com/api/verify/webhook/"
-
-    payload = {
-        "reference": reference,
-        "email": email,
-        "phoneNumber": str(phone),
-        "country": "NG",
-        "product_type": "nin",  # User enters NIN on Youverify's page
-        "redirectUrl": redirect_url,
-        "webhookUrl": webhook_url
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-
-        # Parse response safely
         try:
-            data = response.json()
-        except json.JSONDecodeError:
-            return Response({
-                "error": "Youverify returned a non-JSON response.",
-                "status_code": response.status_code,
-                "raw_response": response.text,
-            }, status=status.HTTP_502_BAD_GATEWAY)
+            result = verify_nin(nin)
+            if result.get("status") != "success":
+                messages.error(request, "NIN not found or invalid. Please check and try again.")
+                return render(request, "verification/start.html", {"email": email, "phone": phone, "nin": nin})
 
-        # ✅ Check for successful hosted session creation
-        if response.status_code == 200:
-            verification_url = data.get("data", {}).get("verificationUrl")
-            if verification_url:
-                return Response({
-                    "verification_url": verification_url,
-                    "environment": "sandbox" if "sandbox" in settings.YV_BASE_URL else "live"
-                }, status=status.HTTP_200_OK)
+            photo = result["data"].get("image")
+            if not photo:
+                messages.error(request, "No photo found for this NIN.")
+                return render(request, "verification/start.html", {"email": email, "phone": phone, "nin": nin})
+
+            # Save to session
+            request.session["verification_email"] = email
+            request.session["verification_phone"] = phone
+            request.session["verification_nin"] = nin
+            request.session["verification_photo"] = photo  # base64 string
+
+            return redirect("verification_selfie")
+
+        except Exception as e:
+            logger.exception("Youverify NIN API error")
+            messages.error(request, "Verification temporarily unavailable. Please try again.")
+            return render(request, "verification/start.html", {"email": email, "phone": phone, "nin": nin})
+
+    return render(request, "verification/start.html")
+
+
+@csrf_protect
+@require_http_methods(["GET", "POST"])
+def verification_selfie(request):
+    if "verification_nin" not in request.session:
+        return redirect("verification_start")
+
+    if request.method == "POST":
+        selfie_data = request.POST.get("selfie", "").strip()
+        if not selfie_data:
+            messages.error(request, "Please take a selfie.")
+            return render(request, "verification/selfie.html")
+
+        # Clean base64
+        if "," in selfie_data:
+            selfie_data = selfie_data.split(",")[1]
+
+        # Optional: validate base64
+        try:
+            base64.b64decode(selfie_data, validate=True)
+        except Exception:
+            messages.error(request, "Invalid image data.")
+            return render(request, "verification/selfie.html")
+
+        try:
+            official_photo = request.session["verification_photo"]
+            result = face_match(official_photo, selfie_data)
+
+            match = result.get("match", False)
+            confidence = result.get("confidence", 0)
+
+            request.session["verification_match"] = match
+            request.session["verification_confidence"] = confidence
+
+            # Success if match + confidence ≥ 0.85
+            if match and confidence >= 0.85:
+                request.session["verification_result"] = "success"
             else:
-                return Response({
-                    "error": "Missing verificationUrl in Youverify response.",
-                    "details": data
-                }, status=status.HTTP_502_BAD_GATEWAY)
-        else:
-            return Response({
-                "error": "Youverify API request failed.",
-                "status_code": response.status_code,
-                "details": data
-            }, status=status.HTTP_400_BAD_REQUEST)
+                request.session["verification_result"] = "failed"
 
-    except requests.exceptions.RequestException as e:
-        return Response({
-            "error": "Failed to connect to Youverify.",
-            "details": str(e),
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return redirect("verification_result")
+
+        except Exception as e:
+            logger.exception("Youverify Face Match error")
+            messages.error(request, "Face comparison failed. Please try again.")
+            return render(request, "verification/selfie.html")
+
+    return render(request, "verification/selfie.html")
 
 
-@csrf_exempt
-@api_view(["POST"])
-def verification_webhook(request):
-    """
-    Handle callback from Youverify (used in both sandbox and live).
-    """
-    try:
-        data = json.loads(request.body.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
+def verification_result(request):
+    result = request.session.get("verification_result")
+    if not result:
+        return redirect("verification_start")
 
-    # Extract data from webhook payload
-    event = data.get("event")
-    if event != "identity.completed":
-        return JsonResponse({"status": "ignored", "reason": "non-completion event"}, status=200)
+    confidence = request.session.get("verification_confidence", 0)
+    context = {"confidence": confidence}
 
-    verification_data = data.get("data", {})
-    reference = verification_data.get("reference")
-    status_code = verification_data.get("status")
-
-    # Fallback: try top-level reference if not in data
-    if not reference:
-        reference = data.get("reference")
-
-    if not reference or not str(reference).startswith("user_"):
-        return JsonResponse({"error": "Invalid or missing reference"}, status=400)
-
-    try:
-        user_id = int(str(reference).split("_")[1])
-        from accounts.models import User
-        user = User.objects.get(id=user_id)
-    except (ValueError, User.DoesNotExist, IndexError):
-        return JsonResponse({"error": "User not found"}, status=404)
-
-    # ✅ Mark user as verified only if all checks passed
-    all_passed = verification_data.get("allValidationPassed", False)
-    if status_code == "found" and all_passed:
-        user.is_identity_verified = True
-        user.identity_verified_at = timezone.now()
-        user.save(update_fields=["is_identity_verified", "identity_verified_at"])
-
-    return JsonResponse({"status": "ok"}, status=200)
+    if result == "success":
+        # Optional: create user session, mark verified, etc.
+        return render(request, "verification/success.html", context)
+    else:
+        return render(request, "verification/failure.html", context)
