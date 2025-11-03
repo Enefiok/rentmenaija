@@ -5,7 +5,8 @@ from django.conf import settings
 
 def verify_nin(nin: str):
     """Verify NIN via Youverify API. Returns dict or raises exception."""
-    url = f"{settings.YV_BASE_URL}/api/identity/verify/nin"
+    # ✅ Correct endpoint: /v2/identity/... (no extra "/api")
+    url = f"{settings.YV_BASE_URL}/identity/verify/nin"
     headers = {
         "Authorization": f"Bearer {settings.YV_API_KEY}",
         "Content-Type": "application/json",
@@ -21,7 +22,8 @@ def verify_nin(nin: str):
 
 def face_match(official_photo: str, selfie: str):
     """Compare two base64 images. Returns dict with 'match' and 'confidence'."""
-    url = f"{settings.YV_BASE_URL}/api/biometrics/face-match"
+    # ✅ Correct endpoint: /v2/biometrics/... (no extra "/api")
+    url = f"{settings.YV_BASE_URL}/biometrics/face-match"
     headers = {
         "Authorization": f"Bearer {settings.YV_API_KEY}",
         "Content-Type": "application/json",
