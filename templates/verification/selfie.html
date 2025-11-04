@@ -1,0 +1,80 @@
+<!-- templates/verification/selfie.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capture Selfie – RentMeNaija</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { background: #f8f9fa; color: #212529; padding: 20px; }
+        .container { max-width: 480px; margin: 0 auto; background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; }
+        .logo { margin-bottom: 20px; }
+        .logo h1 { color: #009688; font-size: 24px; }
+        h2 { font-size: 20px; margin: 16px 0; }
+        .instructions { color: #6c757d; margin-bottom: 20px; font-size: 15px; line-height: 1.5; }
+        #camera { width: 100%; max-width: 320px; height: 240px; background: #eee; border-radius: 12px; margin: 0 auto 20px; display: block; }
+        .btn { background: #009688; color: white; border: none; padding: 14px 24px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+        .btn:hover { background: #00796b; }
+        .error { color: #d32f2f; background: #ffebee; padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 14px; }
+        canvas { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>RentMeNaija</h1>
+        </div>
+
+        <h2>Take a Selfie</h2>
+        <p class="instructions">Position your face in the frame. Make sure you're in a well-lit area.</p>
+
+        {% if messages %}
+            <div class="error">
+                {% for message in messages %}
+                    {{ message }}
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <video id="camera" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+
+        <form method="POST" id="selfieForm">
+            {% csrf_token %}
+            <input type="hidden" name="selfie" id="selfieInput">
+            <button type="button" class="btn" onclick="captureSelfie()">Take Photo</button>
+        </form>
+    </div>
+
+    <script>
+        const video = document.getElementById('camera');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const selfieInput = document.getElementById('selfieInput');
+
+        // Request camera access
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                alert('Camera access denied. Please allow camera permission to continue.');
+                console.error('Camera error:', err);
+            });
+
+        function captureSelfie() {
+            // Set canvas size to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            // Draw current video frame to canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // Convert to JPEG base64
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            selfieInput.value = dataUrl;
+            // Submit form
+            document.getElementById('selfieForm').submit();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Verify Your Email</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f7f9fc;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 30px auto;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background-color: #007BFF;
+      color: white;
+      padding: 20px;
+      text-align: center;
+      border-radius: 10px 10px 0 0;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .content {
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .content p {
+      margin: 0 0 16px;
+    }
+    .button {
+      display: inline-block;
+      padding: 14px 28px;
+      margin: 20px 0;
+      background-color: #28a745;
+      color: white !important;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 16px;
+      text-align: center;
+      box-shadow: 0 4px 8px rgba(40, 167, 69, 0.2);
+    }
+    .button:hover {
+      background-color: #218838;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #777;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+    }
+    .footer a {
+      color: #007BFF;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Welcome to Rent Me Naija!</h1>
+    </div>
+    <div class="content">
+      <p>Hi <strong>{{ user.first_name }}</strong>,</p>
+      <p>Thank you for registering with <strong>Rent Me Naija</strong> — your trusted platform for finding homes across Nigeria.</p>
+      <p>To complete your registration, please verify your email address by clicking the button below:</p>
+
+      <center>
+        <a href="{{ verify_url }}" class="button">✅ Verify My Email</a>
+      </center>
+
+      <p>If the button doesn’t work, copy and paste this link into your browser:<br>
+      <small style="color: #007BFF;">{{ verify_url }}</small></p>
+
+      <p>This link expires after 24 hours for security reasons.</p>
+    </div>
+    <div class="footer">
+      &copy; 2025 Rent Me Naija. All rights reserved.<br>
+      Need help? Contact us at <a href="mailto:support@rentmenaija.com">support@rentmenaija.com</a>
+    </div>
+  </div>
+</body>
+</html>
