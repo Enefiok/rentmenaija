@@ -155,30 +155,21 @@ def profile(request):
         "date_joined": user.date_joined,
     })
 
+from django.shortcuts import render  # Add this at top if not present
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def verify_email(request, token):
-    """
-    API Endpoint: GET /api/verify-email/<token>/
-    Verifies user's email using token.
-    Redirects to frontend at /verify-email with ?status=success or ?status=invalid.
-    """
     try:
         user = User.objects.get(verification_token=token)
         user.is_verified = True
         user.verification_token = None
         user.save(update_fields=['is_verified', 'verification_token'])
-
-        # ✅ Redirect to dedicated verification result page
-        redirect_url = f"{settings.FRONTEND_URL}/verify-email?status=success"
-        return HttpResponseRedirect(redirect_url)
-
+        return render(request, 'verification_success.html')
     except User.DoesNotExist:
-        # 🔁 Invalid or expired token
-        redirect_url = f"{settings.FRONTEND_URL}/verify-email?status=invalid"
-        return HttpResponseRedirect(redirect_url)
-
+        return render(request, 'verification_error.html')
+    
+    
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
