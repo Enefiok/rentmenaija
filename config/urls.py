@@ -38,6 +38,8 @@ urlpatterns = [
 
     path('api/hotels/', include('hotels.urls')),
 
+    path('api/payments/', include('payments.urls')),
+
     
 ]
 
