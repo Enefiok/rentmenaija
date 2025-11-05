@@ -64,7 +64,7 @@ def initiate_payment(request):
         # Fetch room
         try:
             room = RoomType.objects.get(id=room_id)
-            logger.info(f"✅ Room found: {room.room_name}, price={room.price_per_night}")
+            logger.info(f"✅ Room found: {room.name}, price={room.price_per_night}")  # ✅ FIXED: room.name
         except RoomType.DoesNotExist:
             logger.error(f"❌ Room ID {room_id} not found in DB")
             return JsonResponse({'error': 'Room not found'}, status=404)
@@ -100,7 +100,7 @@ def initiate_payment(request):
             "currency": "NGN",
             "initiate_type": "inline",
             "transaction_ref": transaction_ref,
-            "callback_url": "https://rentmenaija-a4ed.onrender.com/payment-success/",  # ✅ Clean
+            "callback_url": "https://rentmenaija-a4ed.onrender.com/payment-success/",  # ✅ FIXED: no trailing spaces
             "customer_name": guest_full_name,
             "payment_channels": ["card", "bank", "ussd", "transfer"],
             "metadata": {
@@ -117,7 +117,7 @@ def initiate_payment(request):
 
         logger.info("📤 Calling Squad API...")
         resp = requests.post(
-            "https://sandbox-api-d.squadco.com/transaction/initiate",  # ✅ Clean
+            "https://sandbox-api-d.squadco.com/transaction/initiate",  # ✅ FIXED: no trailing spaces
             json=squad_payload,
             headers=headers,
             timeout=10
