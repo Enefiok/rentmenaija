@@ -10,9 +10,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 @csrf_exempt
 def initiate_payment(request):
-    # Log entry
     logger.info("🔥 INITIATE_PAYMENT CALLED")
     logger.info(f"RequestMethod: {request.method}")
     logger.info(f"RequestPath: {request.path}")
@@ -24,12 +24,10 @@ def initiate_payment(request):
         return JsonResponse({'error': 'Use POST'}, status=405)
 
     try:
-        # Check empty body
         if not request.body.strip():
             logger.error("❌ Empty request body")
             return JsonResponse({'error': 'Request body is empty'}, status=400)
 
-        # Parse JSON
         try:
             data = json.loads(request.body)
             logger.info(f"✅ Parsed JSON: {data}")
@@ -37,7 +35,6 @@ def initiate_payment(request):
             logger.error(f"❌ JSON decode failed: {str(e)} | Raw: {request.body}")
             return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
-        # Extract fields
         room_id = data.get('room_id')
         check_in_str = data.get('check_in')
         check_out_str = data.get('check_out')
@@ -47,34 +44,29 @@ def initiate_payment(request):
 
         logger.info(f"Fields: room_id={room_id}, check_in={check_in_str}, check_out={check_out_str}, email={guest_email}")
 
-        # Validate required
         required = ['room_id', 'check_in', 'check_out', 'guest_full_name', 'guest_email']
         missing = [field for field in required if not data.get(field)]
         if missing:
             logger.error(f"❌ Missing fields: {missing}")
             return JsonResponse({'error': 'Missing required fields', 'missing': missing}, status=400)
 
-        # Validate dates
         check_in = parse_date(check_in_str)
         check_out = parse_date(check_out_str)
         if not check_in or not check_out or check_out <= check_in:
             logger.error("❌ Invalid dates")
             return JsonResponse({'error': 'Invalid check-in or check-out date'}, status=400)
 
-        # Fetch room
         try:
             room = RoomType.objects.get(id=room_id)
-            logger.info(f"✅ Room found: {room.name}, price={room.price_per_night}")  # ✅ FIXED: room.name
+            logger.info(f"✅ Room found: {room.name}, price={room.price_per_night}")
         except RoomType.DoesNotExist:
             logger.error(f"❌ Room ID {room_id} not found in DB")
             return JsonResponse({'error': 'Room not found'}, status=404)
 
-        # Calculate amount
         nights = (check_out - check_in).days
         total_amount = room.price_per_night * nights
         logger.info(f"📅 Nights: {nights}, Total: ₦{total_amount}")
 
-        # Create booking
         transaction_ref = f"RMN_{uuid.uuid4().hex[:12].upper()}"
         user = request.user if request.user.is_authenticated else None
         booking = HotelBooking.objects.create(
@@ -92,7 +84,16 @@ def initiate_payment(request):
         )
         logger.info(f"✅ Booking created: ID={booking.id}, Ref={transaction_ref}")
 
-        # Squad payload — NO TRAILING SPACES
+        # Validate required settings — use SQUAD_PAYMENT_SUCCESS_URL
+        if not all([
+            settings.SQUAD_SECRET_KEY,
+            settings.SQUAD_BASE_URL,
+            settings.SQUAD_PAYMENT_SUCCESS_URL  # ← Updated
+        ]):
+            logger.error("❌ Missing SQUAD configuration in settings")
+            booking.delete()
+            return JsonResponse({'error': 'Payment gateway not configured'}, status=500)
+
         amount_kobo = int(total_amount * 100)
         squad_payload = {
             "amount": str(amount_kobo),
@@ -100,7 +101,7 @@ def initiate_payment(request):
             "currency": "NGN",
             "initiate_type": "inline",
             "transaction_ref": transaction_ref,
-            "callback_url": "https://rentmenaija-a4ed.onrender.com/payment-success/",  # ✅ FIXED: no trailing spaces
+            "callback_url": settings.SQUAD_PAYMENT_SUCCESS_URL.strip(),  # ← Updated
             "customer_name": guest_full_name,
             "payment_channels": ["card", "bank", "ussd", "transfer"],
             "metadata": {
@@ -111,13 +112,13 @@ def initiate_payment(request):
         }
 
         headers = {
-            "Authorization": "Bearer sandbox_sk_94f2b798466408ef4d19e848ee1a4d1a3e93f104046f",
+            "Authorization": f"Bearer {settings.SQUAD_SECRET_KEY}",
             "Content-Type": "application/json"
         }
 
         logger.info("📤 Calling Squad API...")
         resp = requests.post(
-            "https://sandbox-api-d.squadco.com/transaction/initiate",  # ✅ FIXED: no trailing spaces
+            f"{settings.SQUAD_BASE_URL.strip()}/transaction/initiate",
             json=squad_payload,
             headers=headers,
             timeout=10

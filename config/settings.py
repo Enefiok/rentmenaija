@@ -196,3 +196,10 @@ if not DEBUG:
 
 YV_API_KEY = config('YV_API_KEY')
 YV_BASE_URL = config('YV_BASE_URL')
+
+# Squad Payment Gateway
+SQUAD_SECRET_KEY = config('SQUAD_SECRET_KEY', default=None)
+SQUAD_PUBLIC_KEY = config('SQUAD_PUBLIC_KEY', default=None)
+SQUAD_BASE_URL = config('SQUAD_BASE_URL', default='https://sandbox-api-d.squadco.com')
+SQUAD_WEBHOOK_URL = config('SQUAD_WEBHOOK_URL', default=None)
+SQUAD_PAYMENT_SUCCESS_URL = config('SQUAD_PAYMENT_SUCCESS_URL', default=None)
