@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'agent_listings', 
     'hotels',
     'verification',
+    'payments',
 ]
 
 MIDDLEWARE = [
