@@ -14,7 +14,12 @@ def initiate_payment(request):
         return JsonResponse({'error': 'Use POST'}, status=405)
 
     try:
-        data = json.loads(request.body)
+        # Handle JSON decode errors explicitly
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
         room_id = data.get('room_id')
         check_in_str = data.get('check_in')      # "YYYY-MM-DD"
         check_out_str = data.get('check_out')
@@ -54,7 +59,7 @@ def initiate_payment(request):
             room=room,
             check_in=check_in,
             check_out=check_out,
-            num_guests=1,  # or accept from frontend
+            num_guests=1,
             amount_paid_ngn=total_amount,
             status='pending',
             transaction_ref=transaction_ref,
@@ -72,7 +77,7 @@ def initiate_payment(request):
             "currency": "NGN",
             "initiate_type": "inline",
             "transaction_ref": transaction_ref,
-            "callback_url": "https://rentmenaija-a4ed.onrender.com/payment-success/",
+            "callback_url": "https://rentmenaija-a4ed.onrender.com/payment-success/",  # ✅ NO TRAILING SPACES
             "customer_name": guest_full_name,
             "payment_channels": ["card", "bank", "ussd", "transfer"],
             "metadata": {
@@ -89,7 +94,7 @@ def initiate_payment(request):
 
         # Call Squad API
         resp = requests.post(
-            "https://sandbox-api-d.squadco.com/transaction/initiate",
+            "https://sandbox-api-d.squadco.com/transaction/initiate",  # ✅ NO TRAILING SPACES
             json=squad_payload,
             headers=headers,
             timeout=10
