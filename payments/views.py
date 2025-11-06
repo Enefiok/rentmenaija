@@ -2,6 +2,7 @@ import uuid
 import requests
 from django.conf import settings
 from django.utils.dateparse import parse_date
+from django.http import HttpResponse, JsonResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -22,7 +23,7 @@ def initiate_payment(request):
     logger.info(f"RawData: {request.data}")
 
     try:
-        data = request.data  # DRF auto-parses JSON
+        data = request.data
 
         room_id = data.get('room_id')
         check_in_str = data.get('check_in')
@@ -80,7 +81,6 @@ def initiate_payment(request):
         )
         logger.info(f"✅ Booking created: ID={booking.id}, Ref={transaction_ref}")
 
-        # Validate Squad config
         if not all([
             settings.SQUAD_SECRET_KEY,
             settings.SQUAD_BASE_URL,
@@ -150,14 +150,13 @@ def initiate_payment(request):
         )
 
 
-# Updated webhook to handle both POST (webhook) and GET (?reference=...)
+# Updated webhook: returns JSON for POST, HTML for GET
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
 import json
 
 @csrf_exempt
 def squad_webhook(request):
-    # 🔹 Handle GET redirect with ?reference= (common in Squad sandbox & success redirect)
+    # 🔹 Handle GET redirect — show user-friendly HTML page
     if request.method == 'GET':
         transaction_ref = request.GET.get('reference')
         if transaction_ref:
@@ -168,12 +167,140 @@ def squad_webhook(request):
                     booking.status = 'paid'
                     booking.save()
                     logger.info(f"✅ Booking #{booking.id} marked as PAID via GET")
-                return JsonResponse({'status': 'ok'})
+
+                # ✅ Return HTML success page
+                html = f"""
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Payment Successful - RentMeNaija</title>
+                    <style>
+                        body {{
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                            background: #f8f9fa;
+                            margin: 0;
+                            padding: 0;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            min-height: 100vh;
+                            color: #333;
+                        }}
+                        .container {{
+                            text-align: center;
+                            background: white;
+                            padding: 2.5rem;
+                            border-radius: 12px;
+                            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                            max-width: 500px;
+                            width: 90%;
+                        }}
+                        .success-icon {{
+                            font-size: 3.5rem;
+                            color: #28a745;
+                            margin-bottom: 1rem;
+                        }}
+                        h1 {{
+                            font-size: 1.8rem;
+                            margin: 0 0 1rem;
+                            color: #28a745;
+                        }}
+                        p {{
+                            font-size: 1.1rem;
+                            line-height: 1.6;
+                            margin-bottom: 1.5rem;
+                            color: #555;
+                        }}
+                        .booking-ref {{
+                            background: #e9f7ef;
+                            padding: 0.5rem;
+                            border-radius: 6px;
+                            font-family: monospace;
+                            font-size: 0.95rem;
+                            margin: 1rem 0;
+                            display: inline-block;
+                        }}
+                        .btn {{
+                            display: inline-block;
+                            background: #007BFF;
+                            color: white;
+                            text-decoration: none;
+                            padding: 0.8rem 1.5rem;
+                            border-radius: 8px;
+                            font-weight: 600;
+                            margin-top: 1rem;
+                            transition: background 0.2s;
+                        }}
+                        .btn:hover {{
+                            background: #0069d9;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="success-icon">✅</div>
+                        <h1>Payment Successful!</h1>
+                        <p>Your booking has been confirmed.</p>
+                        <div class="booking-ref">Reference: {booking.transaction_ref}</div>
+                        <p>We've sent a confirmation to your email.</p>
+                        <a href="https://rentmenaija.com/my-bookings" class="btn">View My Bookings</a>
+                    </div>
+                </body>
+                </html>
+                """
+                return HttpResponse(html, content_type='text/html')
+
             except HotelBooking.DoesNotExist:
                 logger.warning(f"⚠️ GET redirect: Booking not found for {transaction_ref}")
-        return JsonResponse({'status': 'ignored'})
+                # ❌ Return HTML error page
+                html = """
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Payment Confirmation Failed - RentMeNaija</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                        .error { color: #dc3545; font-size: 2rem; margin-bottom: 1rem; }
+                        p { font-size: 1.1rem; color: #555; }
+                        a { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 5px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="error">❌ Payment Confirmation Failed</div>
+                    <p>We couldn't find your booking. Please contact support with your payment reference.</p>
+                    <a href="https://rentmenaija.com">Go to Home</a>
+                </body>
+                </html>
+                """
+                return HttpResponse(html, content_type='text/html')
 
-    # 🔹 Handle standard POST webhook (JSON body)
+        # No reference — show error
+        html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Invalid Request - RentMeNaija</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                p { font-size: 1.1rem; color: #555; }
+                a { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px; }
+            </style>
+        </head>
+        <body>
+            <p>Invalid payment confirmation request.</p>
+            <a href="https://rentmenaija.com">Go to Home</a>
+        </body>
+        </html>
+        """
+        return HttpResponse(html, content_type='text/html')
+
+    # 🔹 Handle POST webhook (JSON response for server-to-server)
     if request.method != 'POST':
         return JsonResponse({'status': 'ignored'}, status=200)
 
