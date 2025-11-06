@@ -150,13 +150,30 @@ def initiate_payment(request):
         )
 
 
-# Webhook remains unchanged (it's public, no auth needed)
+# Updated webhook to handle both POST (webhook) and GET (?reference=...)
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import json
 
 @csrf_exempt
 def squad_webhook(request):
+    # 🔹 Handle GET redirect with ?reference= (common in Squad sandbox & success redirect)
+    if request.method == 'GET':
+        transaction_ref = request.GET.get('reference')
+        if transaction_ref:
+            logger.info(f"🔗 GET redirect with reference: {transaction_ref}")
+            try:
+                booking = HotelBooking.objects.get(transaction_ref=transaction_ref)
+                if booking.status != 'paid':
+                    booking.status = 'paid'
+                    booking.save()
+                    logger.info(f"✅ Booking #{booking.id} marked as PAID via GET")
+                return JsonResponse({'status': 'ok'})
+            except HotelBooking.DoesNotExist:
+                logger.warning(f"⚠️ GET redirect: Booking not found for {transaction_ref}")
+        return JsonResponse({'status': 'ignored'})
+
+    # 🔹 Handle standard POST webhook (JSON body)
     if request.method != 'POST':
         return JsonResponse({'status': 'ignored'}, status=200)
 
@@ -172,9 +189,10 @@ def squad_webhook(request):
 
                 try:
                     booking = HotelBooking.objects.get(transaction_ref=transaction_ref)
-                    booking.status = 'paid'
-                    booking.save()
-                    logger.info(f"✅ Booking #{booking.id} marked as PAID")
+                    if booking.status != 'paid':
+                        booking.status = 'paid'
+                        booking.save()
+                        logger.info(f"✅ Booking #{booking.id} marked as PAID via POST")
                     return JsonResponse({'status': 'ok'})
                 except HotelBooking.DoesNotExist:
                     logger.warning(f"⚠️ Webhook: Booking not found for {transaction_ref}")
