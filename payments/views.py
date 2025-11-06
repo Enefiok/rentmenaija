@@ -6,6 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from hotels.models import RoomType, HotelBooking
+from django.contrib.auth.models import AnonymousUser
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,11 @@ def initiate_payment(request):
         logger.warning("⚠️ Non-POST request")
         return JsonResponse({'error': 'Use POST'}, status=405)
 
+    # 🔒 Enforce authentication
+    if not request.user.is_authenticated or isinstance(request.user, AnonymousUser):
+        logger.warning("⚠️ Unauthenticated user attempted payment")
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+
     try:
         if not request.body.strip():
             logger.error("❌ Empty request body")
@@ -35,16 +41,23 @@ def initiate_payment(request):
             logger.error(f"❌ JSON decode failed: {str(e)} | Raw: {request.body}")
             return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
+        # ❌ Removed guest fields — use authenticated user
         room_id = data.get('room_id')
         check_in_str = data.get('check_in')
         check_out_str = data.get('check_out')
-        guest_full_name = data.get('guest_full_name')
-        guest_email = data.get('guest_email')
-        guest_phone = data.get('guest_phone', '')
 
-        logger.info(f"Fields: room_id={room_id}, check_in={check_in_str}, check_out={check_out_str}, email={guest_email}")
+        # ✅ Build guest info from request.user
+        user = request.user
+        guest_full_name = f"{user.first_name} {user.last_name}".strip()
+        if not guest_full_name:
+            guest_full_name = user.email  # fallback
+        guest_email = user.email
+        guest_phone = getattr(user, 'phone', '')  # optional — only if your User model has 'phone'
 
-        required = ['room_id', 'check_in', 'check_out', 'guest_full_name', 'guest_email']
+        logger.info(f"Fields: room_id={room_id}, check_in={check_in_str}, check_out={check_out_str}, user={user.email}")
+
+        # ✅ Updated required fields (guest fields removed)
+        required = ['room_id', 'check_in', 'check_out']
         missing = [field for field in required if not data.get(field)]
         if missing:
             logger.error(f"❌ Missing fields: {missing}")
@@ -68,9 +81,8 @@ def initiate_payment(request):
         logger.info(f"📅 Nights: {nights}, Total: ₦{total_amount}")
 
         transaction_ref = f"RMN_{uuid.uuid4().hex[:12].upper()}"
-        user = request.user if request.user.is_authenticated else None
         booking = HotelBooking.objects.create(
-            user=user,
+            user=user,  # ✅ Always a real user now
             room=room,
             check_in=check_in,
             check_out=check_out,
@@ -84,11 +96,11 @@ def initiate_payment(request):
         )
         logger.info(f"✅ Booking created: ID={booking.id}, Ref={transaction_ref}")
 
-        # Validate required settings — use SQUAD_PAYMENT_SUCCESS_URL
+        # Validate required settings
         if not all([
             settings.SQUAD_SECRET_KEY,
             settings.SQUAD_BASE_URL,
-            settings.SQUAD_PAYMENT_SUCCESS_URL  # ← Updated
+            settings.SQUAD_PAYMENT_SUCCESS_URL
         ]):
             logger.error("❌ Missing SQUAD configuration in settings")
             booking.delete()
@@ -101,7 +113,7 @@ def initiate_payment(request):
             "currency": "NGN",
             "initiate_type": "inline",
             "transaction_ref": transaction_ref,
-            "callback_url": settings.SQUAD_PAYMENT_SUCCESS_URL.strip(),  # ← Updated
+            "callback_url": settings.SQUAD_PAYMENT_SUCCESS_URL.strip(),
             "customer_name": guest_full_name,
             "payment_channels": ["card", "bank", "ussd", "transfer"],
             "metadata": {
@@ -128,7 +140,7 @@ def initiate_payment(request):
         logger.info(f"Squad Response: {resp.status_code} | {result}")
 
         if resp.status_code == 200 and result.get('status') == 200:
-            checkout_url = result['data']['checkout_url']
+            checkout_url = result['data']['checkout_url'].strip()
             logger.info(f"✅ Success! Checkout URL: {checkout_url}")
             return JsonResponse({
                 "checkout_url": checkout_url,
