@@ -1,6 +1,3 @@
-Okay, here is your updated `transactions/views.py` file, including the crucial code block added within the `initiate_lease_payment` function to link the `LeasePayment` to the existing `Booking` and update the `Booking` status immediately upon payment initiation.
-
-```python
 import uuid
 import requests
 import logging
