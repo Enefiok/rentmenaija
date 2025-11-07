@@ -1,3 +1,6 @@
+Okay, here is your updated `transactions/views.py` file, including the crucial code block added within the `initiate_lease_payment` function to link the `LeasePayment` to the existing `Booking` and update the `Booking` status immediately upon payment initiation.
+
+```python
 import uuid
 import requests
 import logging
@@ -156,6 +159,30 @@ def initiate_lease_payment(request):
         transaction_ref=transaction_ref
     )
     logger.info(f"✅ LeasePayment created: ID={lease_payment.id}, Ref={transaction_ref}, Amount={amount}")
+
+    # --- NEW: Link to existing Booking if it exists and update status ---
+    try:
+        # Find the saved booking for this listing and user
+        original_booking = Booking.objects.get(
+            user=request.user,
+            listing_type=listing_type,
+            listing_id=listing_id,
+            status='saved' # Only link to the 'saved' one
+        )
+        # Link the LeasePayment to the Booking
+        original_booking.lease_payment = lease_payment
+        original_booking.status = 'paid_pending_confirmation' # Update status immediately upon payment initiation
+        original_booking.save()
+        lease_payment.booking = original_booking # Ensure the reverse link is also set
+        lease_payment.save() # Save the lease_payment with the booking link
+        logger.info(f"🔗 Lease Payment #{lease_payment.id} linked to Booking #{original_booking.id}, Booking status updated to 'paid_pending_confirmation'.")
+    except Booking.DoesNotExist:
+        # If no saved booking exists, the payment is standalone (e.g., user went directly to pay)
+        # This is acceptable, but the confirmation step might not be possible via the booking flow.
+        logger.info(f"⚠️ No existing saved Booking found for user {request.user.id}, {listing_type} ID {listing_id}. Payment is standalone.")
+    except Booking.MultipleObjectsReturned:
+        logger.error(f"❌ Multiple saved Bookings found for user {request.user.id}, {listing_type} ID {listing_id}. Cannot link LeasePayment #{lease_payment.id}.")
+    # --- END NEW ---
 
     # --- Call Squad API ---
     if not all([
