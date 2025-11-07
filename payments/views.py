@@ -247,7 +247,7 @@ def squad_webhook(request):
                         <p>Your booking has been confirmed.</p>
                         <div class="booking-ref">Reference: {booking.transaction_ref}</div>
                         <p>We've sent a confirmation to your email.</p>
-                        <a href="https://rentmenaija.com/my-bookings" class="btn">View My Bookings</a>
+                        <a href="https://rentmenaija.com/my-bookings  " class="btn">View My Bookings</a>
                     </div>
                 </body>
                 </html>
@@ -264,6 +264,15 @@ def squad_webhook(request):
                         lease_payment.status = 'paid'
                         lease_payment.save()
                         logger.info(f"✅ Lease Payment #{lease_payment.id} marked as PAID via GET")
+
+                        # --- NEW: Update associated Booking status ---
+                        # Check if this LeasePayment is linked to a Booking
+                        related_booking = getattr(lease_payment, 'booking', None) # Safely get the related booking via the OneToOneField
+                        if related_booking and related_booking.status == 'saved':
+                            related_booking.status = 'paid_pending_confirmation'
+                            related_booking.save()
+                            logger.info(f"✅ Booking #{related_booking.id} status updated to 'paid_pending_confirmation' via GET redirect.")
+                        # --- END NEW ---
 
                     # ✅ Return HTML success page for Lease Payment
                     html = f"""
@@ -342,7 +351,7 @@ def squad_webhook(request):
                             <p>Your payment for the lease has been processed.</p>
                             <div class="payment-ref">Reference: {lease_payment.transaction_ref}</div>
                             <p>You will be contacted regarding the next steps.</p>
-                            <a href="https://rentmenaija.com/my-payments" class="btn">View My Payments</a> <!-- Adjust link as needed -->
+                            <a href="https://rentmenaija.com/my-payments  " class="btn">View My Payments</a> <!-- Adjust link as needed -->
                         </div>
                     </body>
                     </html>
@@ -370,7 +379,7 @@ def squad_webhook(request):
                     <body>
                         <div class="error">❌ Payment Confirmation Failed</div>
                         <p>We couldn't find your booking or payment record. Please contact support with your payment reference.</p>
-                        <a href="https://rentmenaija.com">Go to Home</a>
+                        <a href="https://rentmenaija.com  ">Go to Home</a>
                     </body>
                     </html>
                     """
@@ -392,7 +401,7 @@ def squad_webhook(request):
         </head>
         <body>
             <p>Invalid payment confirmation request.</p>
-            <a href="https://rentmenaija.com">Go to Home</a>
+            <a href="https://rentmenaija.com  ">Go to Home</a>
         </body>
         </html>
         """
@@ -430,6 +439,16 @@ def squad_webhook(request):
                             lease_payment.status = 'paid'
                             lease_payment.save()
                             logger.info(f"✅ Lease Payment #{lease_payment.id} marked as PAID via POST")
+
+                            # --- NEW: Update associated Booking status ---
+                            # Check if this LeasePayment is linked to a Booking
+                            related_booking = getattr(lease_payment, 'booking', None) # Safely get the related booking via the OneToOneField
+                            if related_booking and related_booking.status == 'saved':
+                                related_booking.status = 'paid_pending_confirmation'
+                                related_booking.save()
+                                logger.info(f"✅ Booking #{related_booking.id} status updated to 'paid_pending_confirmation' via POST webhook.")
+                            # --- END NEW ---
+
                         return JsonResponse({'status': 'ok'})
                     # --- If neither found ---
                     except LeasePayment.DoesNotExist:
