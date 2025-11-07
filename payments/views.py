@@ -161,14 +161,16 @@ def squad_webhook(request):
         transaction_ref = request.GET.get('reference')
         if transaction_ref:
             logger.info(f"🔗 GET redirect with reference: {transaction_ref}")
+
+            # --- Check Hotel Bookings FIRST ---
             try:
                 booking = HotelBooking.objects.get(transaction_ref=transaction_ref)
                 if booking.status != 'paid':
                     booking.status = 'paid'
                     booking.save()
-                    logger.info(f"✅ Booking #{booking.id} marked as PAID via GET")
+                    logger.info(f"✅ Hotel Booking #{booking.id} marked as PAID via GET")
 
-                # ✅ Return HTML success page
+                # ✅ Return HTML success page for Hotel Booking
                 html = f"""
                 <!DOCTYPE html>
                 <html lang="en">
@@ -241,7 +243,7 @@ def squad_webhook(request):
                 <body>
                     <div class="container">
                         <div class="success-icon">✅</div>
-                        <h1>Payment Successful!</h1>
+                        <h1>Hotel Payment Successful!</h1>
                         <p>Your booking has been confirmed.</p>
                         <div class="booking-ref">Reference: {booking.transaction_ref}</div>
                         <p>We've sent a confirmation to your email.</p>
@@ -252,31 +254,127 @@ def squad_webhook(request):
                 """
                 return HttpResponse(html, content_type='text/html')
 
+            # --- If not Hotel Booking, Check Lease Payment ---
             except HotelBooking.DoesNotExist:
-                logger.warning(f"⚠️ GET redirect: Booking not found for {transaction_ref}")
-                # ❌ Return HTML error page
-                html = """
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Payment Confirmation Failed - RentMeNaija</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
-                        .error { color: #dc3545; font-size: 2rem; margin-bottom: 1rem; }
-                        p { font-size: 1.1rem; color: #555; }
-                        a { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 5px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="error">❌ Payment Confirmation Failed</div>
-                    <p>We couldn't find your booking. Please contact support with your payment reference.</p>
-                    <a href="https://rentmenaija.com">Go to Home</a>
-                </body>
-                </html>
-                """
-                return HttpResponse(html, content_type='text/html')
+                try:
+                    # Import here to avoid potential circular import if transactions app isn't loaded yet
+                    from transactions.models import LeasePayment
+                    lease_payment = LeasePayment.objects.get(transaction_ref=transaction_ref)
+                    if lease_payment.status != 'paid':
+                        lease_payment.status = 'paid'
+                        lease_payment.save()
+                        logger.info(f"✅ Lease Payment #{lease_payment.id} marked as PAID via GET")
+
+                    # ✅ Return HTML success page for Lease Payment
+                    html = f"""
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Lease Payment Successful - RentMeNaija</title>
+                        <style>
+                            body {{
+                                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                background: #f8f9fa;
+                                margin: 0;
+                                padding: 0;
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                min-height: 100vh;
+                                color: #333;
+                            }}
+                            .container {{
+                                text-align: center;
+                                background: white;
+                                padding: 2.5rem;
+                                border-radius: 12px;
+                                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                                max-width: 500px;
+                                width: 90%;
+                            }}
+                            .success-icon {{
+                                font-size: 3.5rem;
+                                color: #28a745;
+                                margin-bottom: 1rem;
+                            }}
+                            h1 {{
+                                font-size: 1.8rem;
+                                margin: 0 0 1rem;
+                                color: #28a745;
+                            }}
+                            p {{
+                                font-size: 1.1rem;
+                                line-height: 1.6;
+                                margin-bottom: 1.5rem;
+                                color: #555;
+                            }}
+                            .payment-ref {{
+                                background: #e9f7ef;
+                                padding: 0.5rem;
+                                border-radius: 6px;
+                                font-family: monospace;
+                                font-size: 0.95rem;
+                                margin: 1rem 0;
+                                display: inline-block;
+                            }}
+                            .btn {{
+                                display: inline-block;
+                                background: #007BFF;
+                                color: white;
+                                text-decoration: none;
+                                padding: 0.8rem 1.5rem;
+                                border-radius: 8px;
+                                font-weight: 600;
+                                margin-top: 1rem;
+                                transition: background 0.2s;
+                            }}
+                            .btn:hover {{
+                                background: #0069d9;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <div class="success-icon">✅</div>
+                            <h1>Lease Payment Successful!</h1>
+                            <p>Your payment for the lease has been processed.</p>
+                            <div class="payment-ref">Reference: {lease_payment.transaction_ref}</div>
+                            <p>You will be contacted regarding the next steps.</p>
+                            <a href="https://rentmenaija.com/my-payments" class="btn">View My Payments</a> <!-- Adjust link as needed -->
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    return HttpResponse(html, content_type='text/html')
+
+                # --- If neither Hotel Booking nor Lease Payment found ---
+                except LeasePayment.DoesNotExist:
+                    logger.warning(f"⚠️ GET redirect: Neither HotelBooking nor LeasePayment found for {transaction_ref}")
+                    # ❌ Return generic HTML error page
+                    html = """
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Payment Confirmation Failed - RentMeNaija</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                            .error { color: #dc3545; font-size: 2rem; margin-bottom: 1rem; }
+                            p { font-size: 1.1rem; color: #555; }
+                            a { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 5px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="error">❌ Payment Confirmation Failed</div>
+                        <p>We couldn't find your booking or payment record. Please contact support with your payment reference.</p>
+                        <a href="https://rentmenaija.com">Go to Home</a>
+                    </body>
+                    </html>
+                    """
+                    return HttpResponse(html, content_type='text/html')
 
         # No reference — show error
         html = """
@@ -314,19 +412,35 @@ def squad_webhook(request):
                 transaction_ref = body.get('transaction_ref')
                 logger.info(f"🔗 Processing payment success: {transaction_ref}")
 
+                # --- Check Hotel Bookings FIRST ---
                 try:
                     booking = HotelBooking.objects.get(transaction_ref=transaction_ref)
                     if booking.status != 'paid':
                         booking.status = 'paid'
                         booking.save()
-                        logger.info(f"✅ Booking #{booking.id} marked as PAID via POST")
+                        logger.info(f"✅ Hotel Booking #{booking.id} marked as PAID via POST")
                     return JsonResponse({'status': 'ok'})
+                # --- If not Hotel Booking, Check Lease Payment ---
                 except HotelBooking.DoesNotExist:
-                    logger.warning(f"⚠️ Webhook: Booking not found for {transaction_ref}")
-                    return JsonResponse({'status': 'ignored'}, status=200)
+                    try:
+                        # Import here
+                        from transactions.models import LeasePayment
+                        lease_payment = LeasePayment.objects.get(transaction_ref=transaction_ref)
+                        if lease_payment.status != 'paid':
+                            lease_payment.status = 'paid'
+                            lease_payment.save()
+                            logger.info(f"✅ Lease Payment #{lease_payment.id} marked as PAID via POST")
+                        return JsonResponse({'status': 'ok'})
+                    # --- If neither found ---
+                    except LeasePayment.DoesNotExist:
+                        logger.warning(f"⚠️ Webhook: Neither HotelBooking nor LeasePayment found for {transaction_ref}")
+                        # Squad might send webhook for a reference that doesn't exist in our DB (e.g., old, deleted records)
+                        return JsonResponse({'status': 'ignored'}, status=200)
 
         return JsonResponse({'status': 'ignored'}, status=200)
 
     except Exception as e:
         logger.exception("❌ Webhook error")
         return JsonResponse({'error': 'Bad request'}, status=400)
+
+# Note: The new 'initiate_lease_payment' view is now in the 'transactions' app's views.py

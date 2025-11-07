@@ -31,12 +31,14 @@ urlpatterns = [
 
     # 🔴 Specific API routes FIRST — order matters!
     path('api/payments/', include('payments.urls')),
+    path('api/transactions/', include('transactions.urls')), 
     path('api/hotels/', include('hotels.urls')),
     path('api/agent-listings/', include('agent_listings.urls')),
     path('api/listings/', include('listings.urls')),
 
     # 🔴 General / fallback API routes LAST
     path('api/', include('accounts.urls')),
+
 ]
 
 # Serve static and media files during development ONLY

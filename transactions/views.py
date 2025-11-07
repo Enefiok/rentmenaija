@@ -1,0 +1,239 @@
+import uuid
+import requests
+import logging
+from django.conf import settings
+from django.http import JsonResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import LeasePayment # Import the new model from *this* app
+from listings.models import PropertyDraft # Import Landlord Listing models
+from agent_listings.models import AgentPropertyDraft # Import Agent Listing models
+
+logger = logging.getLogger(__name__)
+
+# --- Helper function to get landlord/agent user ---
+def get_landlord_or_agent_user(listing_type, listing_id):
+    """Helper to find the user associated with the listing draft (landlord or agent)."""
+    if listing_type == 'landlord_listing':
+        try:
+            listing_draft = PropertyDraft.objects.get(id=listing_id)
+            # The user who created the landlord listing draft is the landlord
+            return listing_draft.user
+        except PropertyDraft.DoesNotExist:
+            raise ValueError("Landlord Listing Draft not found")
+    elif listing_type == 'agent_listing':
+        try:
+            agent_listing_draft = AgentPropertyDraft.objects.get(id=listing_id)
+            # The agent who created the agent listing draft
+            return agent_listing_draft.agent
+        except AgentPropertyDraft.DoesNotExist:
+            raise ValueError("Agent Listing Draft not found")
+    else:
+        raise ValueError("Invalid listing type")
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated]) # Require login for lease payments
+def initiate_lease_payment(request):
+    """
+    Initiate a payment for a landlord or agent listing (e.g., security deposit, first month rent).
+    Requires: listing_type ('landlord_listing' or 'agent_listing'), listing_id, payment_type.
+    Uses authenticated user as the tenant.
+    """
+    logger.info("🔥 INITIATE_LEASE_PAYMENT CALLED")
+    logger.info(f"User: {request.user.email}, Data: {request.data}")
+
+    data = request.data
+    listing_type = data.get('listing_type')
+    listing_id = data.get('listing_id')
+    payment_type = data.get('payment_type')
+
+    if not all([listing_type, listing_id, payment_type]):
+        missing = [k for k in ['listing_type', 'listing_id', 'payment_type'] if not data.get(k)]
+        logger.error(f"❌ Missing fields: {missing}")
+        return Response(
+            {'error': 'Missing required fields', 'missing': missing},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Validate listing_type
+    if listing_type not in ['landlord_listing', 'agent_listing']:
+        logger.error(f"❌ Invalid listing_type: {listing_type}")
+        return Response(
+            {"error": "Invalid listing_type. Must be 'landlord_listing' or 'agent_listing'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Validate payment_type
+    valid_payment_types = [choice[0] for choice in LeasePayment.PAYMENT_TYPE_CHOICES]
+    if payment_type not in valid_payment_types:
+         logger.error(f"❌ Invalid payment_type: {payment_type}")
+         return Response(
+             {"error": f"Invalid payment_type. Must be one of: {valid_payment_types}."},
+             status=status.HTTP_400_BAD_REQUEST
+         )
+
+    # Get the listing object to validate it exists and get details (like rent for calculation)
+    try:
+        if listing_type == 'landlord_listing':
+            listing_obj = PropertyDraft.objects.get(id=listing_id) # Query PropertyDraft
+            # Example: Calculate amount based on payment type and listing rent
+            if payment_type == 'security_deposit':
+                 # Example: Deposit is 1 month's rent, adjust logic as needed
+                 amount = float(listing_obj.monthly_rent) # Ensure it's a float for Squad
+            elif payment_type == 'first_month_rent':
+                 amount = float(listing_obj.monthly_rent)
+            elif payment_type == 'booking_fee':
+                 # Example: Fixed booking fee, get from settings or listing detail if variable
+                 amount = 10000.00 # Example fixed amount
+            else:
+                 # Handle other types or require amount from frontend if not derivable
+                 logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
+                 return Response(
+                     {"error": f"Amount calculation not supported for {payment_type}"},
+                     status=status.HTTP_400_BAD_REQUEST
+                 )
+
+        elif listing_type == 'agent_listing':
+            listing_obj = AgentPropertyDraft.objects.get(id=listing_id) # Query AgentPropertyDraft
+            # Similar logic for agent listing
+            if payment_type == 'security_deposit':
+                 amount = float(listing_obj.monthly_rent)
+            elif payment_type == 'first_month_rent':
+                 amount = float(listing_obj.monthly_rent)
+            elif payment_type == 'booking_fee':
+                 amount = 10000.00 # Example
+            else:
+                 logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
+                 return Response(
+                     {"error": f"Amount calculation not supported for {payment_type}"},
+                     status=status.HTTP_400_BAD_REQUEST
+                 )
+
+    except (PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist): # Catch specific DoesNotExist
+        logger.error(f"❌ {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
+        return Response(
+            {"error": f"{listing_type.replace('_', ' ').title()} not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Determine the landlord/agent user for the payment record
+    try:
+        landlord_or_agent_user = get_landlord_or_agent_user(listing_type, listing_id)
+    except ValueError as e:
+        logger.error(f"❌ Error getting landlord/agent user: {e}")
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except (PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist): # Should not happen if the listing check above passed, but good practice
+         logger.error(f"❌ Landlord/Agent user lookup failed for {listing_type} ID {listing_id}")
+         return Response(
+             {"error": f"{listing_type.replace('_', ' ').title()} owner/agent not found."},
+             status=status.HTTP_404_NOT_FOUND
+         )
+
+    # Generate unique transaction reference
+    transaction_ref = f"LEASEPAY_{uuid.uuid4().hex[:12].upper()}"
+
+    # Create the LeasePayment record in the database (status: pending)
+    lease_payment = LeasePayment.objects.create(
+        listing_type=listing_type,
+        listing_id=listing_id,
+        tenant=request.user, # The authenticated user is the tenant
+        landlord_or_agent=landlord_or_agent_user,
+        amount_paid_ngn=amount,
+        payment_type=payment_type,
+        status='pending',
+        transaction_ref=transaction_ref
+    )
+    logger.info(f"✅ LeasePayment created: ID={lease_payment.id}, Ref={transaction_ref}, Amount={amount}")
+
+    # --- Call Squad API ---
+    if not all([
+        settings.SQUAD_SECRET_KEY,
+        settings.SQUAD_BASE_URL,
+        settings.SQUAD_PAYMENT_SUCCESS_URL # Ensure this is set
+    ]):
+        logger.error("❌ Missing SQUAD configuration in settings")
+        lease_payment.delete() # Clean up the pending record
+        return Response(
+            {'error': 'Payment gateway not configured'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    amount_kobo = int(amount * 100) # Convert Naira to Kobo
+    squad_payload = {
+        "amount": str(amount_kobo),
+        "email": request.user.email,
+        "currency": "NGN",
+        "initiate_type": "inline", # Or "redirect" based on your preference
+        "transaction_ref": transaction_ref,
+        "callback_url": settings.SQUAD_PAYMENT_SUCCESS_URL.strip(), # Your success page URL
+        "customer_name": f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email,
+        "payment_channels": ["card", "bank", "ussd", "transfer"], # Adjust as needed
+        "metadata": {
+            "lease_payment_id": lease_payment.id, # Link back to our record
+            "listing_type": listing_type,
+            "listing_id": listing_id
+        }
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.SQUAD_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    logger.info(f"📤 Calling Squad API for LeasePayment {lease_payment.id}...")
+    try:
+        resp = requests.post(
+            f"{settings.SQUAD_BASE_URL.strip()}/transaction/initiate",
+            json=squad_payload,
+            headers=headers,
+            timeout=10
+        )
+
+        result = resp.json()
+        logger.info(f"Squad Response Status: {resp.status_code}, Data: {result}")
+
+        if resp.status_code == 200 and result.get('status') == 200:
+            checkout_url = result['data']['checkout_url'].strip()
+            logger.info(f"✅ Success! Checkout URL: {checkout_url}")
+            return Response({
+                "checkout_url": checkout_url,
+                "lease_payment_id": lease_payment.id
+            })
+        else:
+            # Handle Squad error response
+            lease_payment.status = 'failed' # Mark the payment attempt as failed
+            lease_payment.save()
+            msg = result.get('message', 'Squad payment initiation failed.')
+            logger.error(f"❌ Squad failed: {msg}")
+            return Response(
+                {"error": msg},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    except requests.exceptions.RequestException as e:
+        # Handle network errors or Squad API being down
+        logger.exception(f"💥 Error calling Squad API for LeasePayment {lease_payment.id}")
+        lease_payment.status = 'failed' # Mark as failed due to external error
+        lease_payment.save()
+        return Response(
+            {"error": f"Error initiating payment with Squad: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        # Handle other errors (e.g., JSON parsing)
+        logger.exception(f"💥 Unexpected error during Squad call for LeasePayment {lease_payment.id}")
+        lease_payment.status = 'failed'
+        lease_payment.save()
+        return Response(
+            {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# You can add more views here later if needed, e.g., for retrieving lease payment status, etc.
