@@ -8,9 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import LeasePayment # Import the new model from *this* app
-from listings.models import PropertyDraft # Import Landlord Listing models
-from agent_listings.models import AgentPropertyDraft # Import Agent Listing models
+from .models import LeasePayment, Booking # Import the new model from *this* app
+from listings.models import PropertyDraft, Property # Import Landlord Listing models (draft and published)
+from agent_listings.models import AgentPropertyDraft, AgentProperty # Import Agent Listing models (draft and published)
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +68,16 @@ def initiate_lease_payment(request):
         )
 
     # Validate payment_type
-    valid_payment_types = [choice[0] for choice in LeasePayment.PAYMENT_TYPE_CHOICES]
-    if payment_type not in valid_payment_types:
+    # Note: LeasePayment.PAYMENT_TYPE_CHOICES is not directly accessible here as it's a model attribute.
+    # We can define it again or import it differently if needed globally.
+    # For now, let's define it here again for validation:
+    VALID_PAYMENT_TYPES = [
+        'security_deposit', 'first_month_rent', 'last_month_rent', 'booking_fee'
+    ]
+    if payment_type not in VALID_PAYMENT_TYPES:
          logger.error(f"❌ Invalid payment_type: {payment_type}")
          return Response(
-             {"error": f"Invalid payment_type. Must be one of: {valid_payment_types}."},
+             {"error": f"Invalid payment_type. Must be one of: {VALID_PAYMENT_TYPES}."},
              status=status.HTTP_400_BAD_REQUEST
          )
 
@@ -235,5 +240,206 @@ def initiate_lease_payment(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+# --- New Views for Bookings ---
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_booking(request):
+    """
+    Save a property to the user's bookings (like adding to cart).
+    Requires: listing_type ('landlord_listing' or 'agent_listing'), listing_id.
+    """
+    logger.info("🔥 SAVE_BOOKING CALLED")
+    logger.info(f"User: {request.user.email}, Data: {request.data}")
+
+    data = request.data
+    listing_type = data.get('listing_type')
+    listing_id = data.get('listing_id')
+
+    if not all([listing_type, listing_id]):
+        missing = [k for k in ['listing_type', 'listing_id'] if not data.get(k)]
+        logger.error(f"❌ Missing fields: {missing}")
+        return Response(
+            {'error': 'Missing required fields', 'missing': missing},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Validate listing_type
+    if listing_type not in ['landlord_listing', 'agent_listing']:
+        logger.error(f"❌ Invalid listing_type: {listing_type}")
+        return Response(
+            {"error": "Invalid listing_type. Must be 'landlord_listing' or 'agent_listing'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Validate that the listing exists (check published listings)
+    listing_exists = False
+    try:
+        if listing_type == 'landlord_listing':
+            # Check if the ID corresponds to a published Property
+            Property.objects.get(id=listing_id)
+            listing_exists = True
+        elif listing_type == 'agent_listing':
+            # Check if the ID corresponds to a published AgentProperty
+            AgentProperty.objects.get(id=listing_id)
+            listing_exists = True
+    except (Property.DoesNotExist, AgentProperty.DoesNotExist):
+        logger.error(f"❌ Published {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
+        return Response(
+            {"error": f"Published {listing_type.replace('_', ' ').title()} not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if not listing_exists:
+        logger.error(f"❌ Published {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
+        return Response(
+            {"error": f"Published {listing_type.replace('_', ' ').title()} not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Check if the user already has this property saved
+    existing_booking = Booking.objects.filter(
+        user=request.user,
+        listing_type=listing_type,
+        listing_id=listing_id,
+        status__in=['saved', 'paid_pending_confirmation'] # Don't allow saving if already confirmed/cancelled for this property
+    ).first()
+
+    if existing_booking:
+        logger.warning(f"⚠️ User {request.user.email} already has {listing_type} ID {listing_id} in bookings with status {existing_booking.status}")
+        return Response(
+            {"error": f"You have already saved this {listing_type.replace('_', ' ')}."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Create the new booking record
+    booking = Booking.objects.create(
+        user=request.user,
+        listing_type=listing_type,
+        listing_id=listing_id,
+        status='saved' # Default status is saved
+    )
+    logger.info(f"✅ Booking created: ID={booking.id}, User={request.user.username}, Listing={listing_type} ID {listing_id}")
+
+    return Response({
+        "message": "✅ Property saved to your bookings.",
+        "booking_id": booking.id,
+        "status": booking.status,
+        "created_at": booking.created_at
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_bookings(request):
+    """
+    Retrieve all bookings for the authenticated user.
+    """
+    logger.info("📚 GET_BOOKINGS CALLED")
+    logger.info(f"User: {request.user.email}")
+
+    bookings = Booking.objects.filter(user=request.user).order_by('-created_at')
+
+    # Prepare response data, potentially fetching related listing details
+    booking_data = []
+    for booking in bookings:
+        item_data = {
+            "id": booking.id,
+            "property_title": booking.property_title, # Use the helper property
+            "property_id": booking.listing_id,
+            "listing_type": booking.listing_type,
+            "status": booking.status,
+            "created_at": booking.created_at,
+        }
+        # If the booking has a payment, include payment details
+        if booking.lease_payment:
+            item_data.update({
+                "amount_paid_ngn": str(booking.lease_payment.amount_paid_ngn), # Convert Decimal to string
+                "payment_type": booking.lease_payment.payment_type,
+                "lease_payment_id": booking.lease_payment.id
+            })
+        booking_data.append(item_data)
+
+    return Response(booking_data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_booking(request, booking_id):
+    """
+    Confirm a booking that has been paid for.
+    Requires: booking_id in the URL path.
+    """
+    logger.info(f"✅ CONFIRM_BOOKING CALLED for Booking ID: {booking_id}")
+    logger.info(f"User: {request.user.email}")
+
+    try:
+        booking = Booking.objects.get(id=booking_id, user=request.user) # Ensure user owns the booking
+    except Booking.DoesNotExist:
+        logger.error(f"❌ Booking ID {booking_id} not found for user {request.user.email}")
+        return Response(
+            {"error": "Booking not found or you don't have permission to access it."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Check if the booking can be confirmed (must be paid but not yet confirmed/cancelled)
+    if booking.status != 'paid_pending_confirmation':
+        logger.error(f"❌ Booking ID {booking_id} cannot be confirmed. Current status: {booking.status}")
+        return Response(
+            {"error": f"Cannot confirm booking with status '{booking.status}'. It must be 'paid_pending_confirmation'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Perform the confirmation logic
+    booking.status = 'confirmed'
+    booking.save()
+    logger.info(f"✅ Booking ID {booking_id} confirmed for user {request.user.email}")
+
+    return Response({
+        "message": "✅ Your booking has been confirmed successfully.",
+        "booking_id": booking.id,
+        "status": booking.status
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_booking(request, booking_id):
+    """
+    Cancel a booking (saved or paid).
+    Requires: booking_id in the URL path.
+    """
+    logger.info(f"❌ CANCEL_BOOKING CALLED for Booking ID: {booking_id}")
+    logger.info(f"User: {request.user.email}")
+
+    try:
+        booking = Booking.objects.get(id=booking_id, user=request.user) # Ensure user owns the booking
+    except Booking.DoesNotExist:
+        logger.error(f"❌ Booking ID {booking_id} not found for user {request.user.email}")
+        return Response(
+            {"error": "Booking not found or you don't have permission to access it."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Check if the booking can be cancelled (must not already be cancelled or confirmed)
+    if booking.status in ['confirmed', 'cancelled']:
+        logger.error(f"❌ Booking ID {booking_id} cannot be cancelled. Current status: {booking.status}")
+        return Response(
+            {"error": f"Cannot cancel booking with status '{booking.status}'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Perform the cancellation logic
+    booking.status = 'cancelled'
+    booking.save()
+    logger.info(f"✅ Booking ID {booking_id} cancelled for user {request.user.email}")
+
+    return Response({
+        "message": "🚫 Your booking has been cancelled successfully.",
+        "booking_id": booking.id,
+        "status": booking.status
+    }, status=status.HTTP_200_OK)
 
 # You can add more views here later if needed, e.g., for retrieving lease payment status, etc.
