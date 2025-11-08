@@ -24,15 +24,26 @@ class RoomTypeInline(admin.TabularInline):
 class HotelListingAdmin(admin.ModelAdmin):
     list_display = (
         'name', 'property_type', 'city', 'state', 'status_badge',
-        'owner_email', 'created_at', 'published_at'
+        'owner_email', 'bank_details_summary', # NEW: Show bank details summary in list
+        'created_at', 'published_at'
     )
-    list_filter = ('status', 'property_type', 'city', 'state', 'created_at')
-    search_fields = ('name', 'address', 'owner__email')
+    list_filter = (
+        'status', 'property_type', 'city', 'state', 'created_at',
+        # ✅ NEW: Add bank verification filter
+        'bank_verified',
+    )
+    search_fields = (
+        'name', 'address', 'owner__email',
+        # ✅ NEW: Add bank fields to search
+        'owner_bank_name', 'owner_account_number'
+    )
     readonly_fields = (
         'created_at', 'updated_at', 'published_at',
         'owner', 'is_owner_or_representative', 'details_accurate',
         'assume_responsibility_for_fraud', 'agrees_to_escrow_process',
-        'digital_signature', 'signed_at'
+        'digital_signature', 'signed_at',
+        # ✅ NEW: Add bank detail readonly fields
+        'owner_bank_name', 'owner_account_number', 'owner_account_name', 'bank_verified',
     )
     actions = ['approve_listings', 'reject_listings']
     fieldsets = (
@@ -42,10 +53,14 @@ class HotelListingAdmin(admin.ModelAdmin):
         ('Basic Info', {
             'fields': ('name', 'property_type', 'tagline', 'description', 'phone')
         }),
-        ('Location', {
+        ('📍 Location', {
             'fields': ('address', 'city', 'state', 'latitude', 'longitude')
         }),
-        ('Legal Declarations', {
+        ('💳 Bank Account Details', { # NEW: Add bank details fieldset
+            'fields': ('owner_bank_name', 'owner_account_number', 'owner_account_name', 'bank_verified'),
+            'classes': ('collapse',) # Collapse by default to keep interface clean
+        }),
+        ('✅ Legal Declarations', {
             'fields': (
                 'is_owner_or_representative',
                 'details_accurate',
@@ -56,12 +71,24 @@ class HotelListingAdmin(admin.ModelAdmin):
             ),
             'classes': ('collapse',)
         }),
-        ('Timestamps', {
+        ('📅 Timestamps', {
             'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
     )
     inlines = [HotelFeatureInline, RoomTypeInline]
+
+    # ✅ NEW: Bank Details Summary Column
+    def bank_details_summary(self, obj):
+        if not obj.owner_account_number:
+            return format_html("<span style='color: red;'>❌ No Bank Details</span>")
+        status = "✅ Verified" if obj.bank_verified else "🟡 Pending"
+        return format_html(
+            "<div>{}</div><div style='font-size: 0.8em; color: gray;'>{}</div>",
+            f"{obj.owner_bank_name} - {obj.owner_account_number}",
+            status
+        )
+    bank_details_summary.short_description = "Bank Details"
 
     def owner_email(self, obj):
         return obj.owner.email

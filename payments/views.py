@@ -247,7 +247,7 @@ def squad_webhook(request):
                         <p>Your booking has been confirmed.</p>
                         <div class="booking-ref">Reference: {booking.transaction_ref}</div>
                         <p>We've sent a confirmation to your email.</p>
-                        <a href="https://rentmenaija.com/my-bookings  " class="btn">View My Bookings</a>
+                        <a href="https://rentmenaija.com/my-bookings" class="btn">View My Bookings</a>
                     </div>
                 </body>
                 </html>
@@ -258,7 +258,7 @@ def squad_webhook(request):
             except HotelBooking.DoesNotExist:
                 try:
                     # Import here to avoid potential circular import if transactions app isn't loaded yet
-                    from transactions.models import LeasePayment
+                    from transactions.models import LeasePayment, Booking
                     lease_payment = LeasePayment.objects.get(transaction_ref=transaction_ref)
                     if lease_payment.status != 'paid':
                         lease_payment.status = 'paid'
@@ -268,10 +268,17 @@ def squad_webhook(request):
                         # --- NEW: Update associated Booking status ---
                         # Check if this LeasePayment is linked to a Booking
                         related_booking = getattr(lease_payment, 'booking', None) # Safely get the related booking via the OneToOneField
-                        if related_booking and related_booking.status == 'saved':
-                            related_booking.status = 'paid_pending_confirmation'
-                            related_booking.save()
-                            logger.info(f"✅ Booking #{related_booking.id} status updated to 'paid_pending_confirmation' via GET redirect.")
+                        if related_booking:
+                            # If booking is in 'saved' status, update to 'paid_pending_confirmation'
+                            if related_booking.status == 'saved':
+                                related_booking.status = 'paid_pending_confirmation'
+                                related_booking.initial_amount_paid_ngn = lease_payment.amount_paid_ngn
+                                related_booking.payment_type = lease_payment.payment_type
+                                related_booking.save()
+                                logger.info(f"✅ Booking #{related_booking.id} status updated to 'paid_pending_confirmation' via GET redirect.")
+                            # If booking is already 'paid_pending_confirmation', it means it was already processed
+                            elif related_booking.status == 'paid_pending_confirmation':
+                                logger.info(f"ℹ️ Booking #{related_booking.id} was already in 'paid_pending_confirmation' status")
                         # --- END NEW ---
 
                     # ✅ Return HTML success page for Lease Payment
@@ -351,7 +358,7 @@ def squad_webhook(request):
                             <p>Your payment for the lease has been processed.</p>
                             <div class="payment-ref">Reference: {lease_payment.transaction_ref}</div>
                             <p>You will be contacted regarding the next steps.</p>
-                            <a href="https://rentmenaija.com/my-payments  " class="btn">View My Payments</a> <!-- Adjust link as needed -->
+                            <a href="https://rentmenaija.com/my-payments" class="btn">View My Payments</a> <!-- Adjust link as needed -->
                         </div>
                     </body>
                     </html>
@@ -379,7 +386,7 @@ def squad_webhook(request):
                     <body>
                         <div class="error">❌ Payment Confirmation Failed</div>
                         <p>We couldn't find your booking or payment record. Please contact support with your payment reference.</p>
-                        <a href="https://rentmenaija.com  ">Go to Home</a>
+                        <a href="https://rentmenaija.com">Go to Home</a>
                     </body>
                     </html>
                     """
@@ -401,7 +408,7 @@ def squad_webhook(request):
         </head>
         <body>
             <p>Invalid payment confirmation request.</p>
-            <a href="https://rentmenaija.com  ">Go to Home</a>
+            <a href="https://rentmenaija.com">Go to Home</a>
         </body>
         </html>
         """
@@ -433,7 +440,7 @@ def squad_webhook(request):
                 except HotelBooking.DoesNotExist:
                     try:
                         # Import here
-                        from transactions.models import LeasePayment
+                        from transactions.models import LeasePayment, Booking
                         lease_payment = LeasePayment.objects.get(transaction_ref=transaction_ref)
                         if lease_payment.status != 'paid':
                             lease_payment.status = 'paid'
@@ -443,10 +450,17 @@ def squad_webhook(request):
                             # --- NEW: Update associated Booking status ---
                             # Check if this LeasePayment is linked to a Booking
                             related_booking = getattr(lease_payment, 'booking', None) # Safely get the related booking via the OneToOneField
-                            if related_booking and related_booking.status == 'saved':
-                                related_booking.status = 'paid_pending_confirmation'
-                                related_booking.save()
-                                logger.info(f"✅ Booking #{related_booking.id} status updated to 'paid_pending_confirmation' via POST webhook.")
+                            if related_booking:
+                                # If booking is in 'saved' status, update to 'paid_pending_confirmation'
+                                if related_booking.status == 'saved':
+                                    related_booking.status = 'paid_pending_confirmation'
+                                    related_booking.initial_amount_paid_ngn = lease_payment.amount_paid_ngn
+                                    related_booking.payment_type = lease_payment.payment_type
+                                    related_booking.save()
+                                    logger.info(f"✅ Booking #{related_booking.id} status updated to 'paid_pending_confirmation' via POST webhook.")
+                                # If booking is already 'paid_pending_confirmation', it means it was already processed
+                                elif related_booking.status == 'paid_pending_confirmation':
+                                    logger.info(f"ℹ️ Booking #{related_booking.id} was already in 'paid_pending_confirmation' status")
                             # --- END NEW ---
 
                         return JsonResponse({'status': 'ok'})

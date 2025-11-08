@@ -15,7 +15,7 @@ class PropertyAdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Property
-        fields = '__all__'
+        fields = '__all__' # This will now include the new bank fields
 
     def get_owner(self, obj):
         return f"{obj.draft.user.get_full_name() or obj.draft.user.username}"
@@ -44,6 +44,10 @@ class PropertyDetailSerializer(serializers.ModelSerializer):
     city = serializers.CharField(source='draft.city')
     state = serializers.CharField(source='draft.state')
 
+    # ✅ NEW: Bank Info (Only expose bank name and verification status, not account details)
+    owner_bank_name = serializers.CharField(source='draft.owner_bank_name', read_only=True)
+    bank_verified = serializers.BooleanField(source='draft.bank_verified', read_only=True)
+
     # Metadata
     published_at = serializers.DateTimeField()
 
@@ -66,6 +70,9 @@ class PropertyDetailSerializer(serializers.ModelSerializer):
             'longitude',
             'city',
             'state',
+            # ✅ NEW: Include bank fields
+            'owner_bank_name',
+            'bank_verified',
             'published_at',
         ]
 
@@ -82,11 +89,20 @@ class PropertyListingSerializer(serializers.ModelSerializer):
     city = serializers.CharField(source='draft.city')
     state = serializers.CharField(source='draft.state')
     images = serializers.JSONField(source='draft.images')
+    
+    # ✅ NEW: Bank Info for list view (only bank name and verification status)
+    owner_bank_name = serializers.CharField(source='draft.owner_bank_name', read_only=True)
+    bank_verified = serializers.BooleanField(source='draft.bank_verified', read_only=True)
+    
     published_at = serializers.DateTimeField()
 
     class Meta:
         model = Property
         fields = [
             'id', 'title', 'monthly_rent', 'currency',
-            'property_type', 'city', 'state', 'images', 'published_at'
+            'property_type', 'city', 'state', 'images',
+            # ✅ NEW: Include bank fields
+            'owner_bank_name',
+            'bank_verified',
+            'published_at'
         ]

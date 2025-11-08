@@ -1,3 +1,5 @@
+# hotels/views.py
+
 import cloudinary.uploader
 import requests
 from django.shortcuts import get_object_or_404
@@ -190,19 +192,34 @@ def submit_hotel_for_review(request, hotel_id):
     if not getattr(hotel, 'signed_at', None):
         return Response({"error": "Legal declarations must be signed before submission"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate required fields
-    required = ['name', 'property_type', 'phone', 'address', 'latitude', 'longitude']
+    # ✅ UPDATED: Include bank details in required fields validation
+    required = [
+        'name', 'property_type', 'phone', 'address', 'latitude', 'longitude',
+        'owner_bank_name', 'owner_account_number', 'owner_account_name'
+    ]
     missing = [field for field in required if not getattr(hotel, field, None)]
     if missing:
         return Response({"error": "Missing required fields", "missing": missing}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ✅ NEW: Validate bank account number format
+    if hotel.owner_account_number:
+        if not hotel.owner_account_number.isdigit():
+            return Response({"error": "Account number must contain only digits"}, status=400)
+        if len(hotel.owner_account_number) != 10:
+            return Response({"error": "Account number must be exactly 10 digits"}, status=400)
 
     if not hotel.room_types.exists():
         return Response({"error": "At least one room type is required"}, status=status.HTTP_400_BAD_REQUEST)
 
     hotel.status = 'submitted'
-    hotel.save(update_fields=['status'])
+    # ✅ UPDATED: Include bank details in save
+    hotel.save(update_fields=[
+        'status',
+        'owner_bank_name', 'owner_account_number', 'owner_account_name'
+    ])
     return Response({
-        "message": "✅ Your hotel listing has been submitted successfully and is now awaiting admin approval."
+        "message": "✅ Your hotel listing has been submitted successfully and is now awaiting admin approval.",
+        "listing_id": hotel.id
     }, status=status.HTTP_200_OK)
 
 

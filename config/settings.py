@@ -204,3 +204,28 @@ SQUAD_PUBLIC_KEY = config('SQUAD_PUBLIC_KEY', default=None)
 SQUAD_BASE_URL = config('SQUAD_BASE_URL', default='https://sandbox-api-d.squadco.com')
 SQUAD_WEBHOOK_URL = config('SQUAD_WEBHOOK_URL', default=None)
 SQUAD_PAYMENT_SUCCESS_URL = config('SQUAD_PAYMENT_SUCCESS_URL', default=None)
+
+# Bank code mapping for transfers/disbursements
+BANK_CODE_MAPPING = {
+    'access bank': '000014',
+    'citibank nigeria': '000009',
+    'diamond bank': '000005',  # Now part of Access Bank
+    'ecobank nigeria': '000010',
+    'fidelity bank': '000007',
+    'first bank of nigeria': '000016',
+    'first city monument bank': '000003',
+    'guaranty trust bank': '000013',
+    'heritage bank': '000020',
+    'jaiz bank': '000006',
+    'keystone bank': '000002',
+    'polaris bank': '000008',  # Formerly Skye Bank
+    'providus bank': '090110',  # VFD Microfinance Bank
+    'stanbic ibtc bank': '000012',
+    'standard chartered bank': '000021',
+    'sterling bank': '000001',
+    'union bank of nigeria': '000018',
+    'united bank for africa': '000004',
+    'wema bank': '000017',
+    'zenith bank': '000015',
+    # Add more as needed for your users
+}

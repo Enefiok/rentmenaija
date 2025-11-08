@@ -14,6 +14,7 @@ class PropertyDraftAdmin(admin.ModelAdmin):
         'user',
         'phone_number',
         'address',
+        'bank_details_summary', # NEW: Show bank details summary in list
         'submitted_for_review',
         'created_at'
     )
@@ -21,14 +22,19 @@ class PropertyDraftAdmin(admin.ModelAdmin):
         'submitted_for_review',
         'currency',
         'lease_term_preference',
-        'created_at'
+        'created_at',
+        # ✅ NEW: Add bank verification filter
+        ('bank_verified', admin.BooleanFieldListFilter),
     )
     search_fields = (
         'title',
         'user__username',
         'user__email',
         'phone_number',
-        'address'
+        'address',
+        # ✅ NEW: Add bank fields to search
+        'owner_bank_name',
+        'owner_account_number',
     )
     readonly_fields = ('created_at', 'updated_at')
     fieldsets = (
@@ -38,14 +44,18 @@ class PropertyDraftAdmin(admin.ModelAdmin):
         ("Contact & Description", {
             "fields": ("phone_number", "description", "known_issues", "house_rules")
         }),
-        ("Location", {
+        ("📍 Location", {
             "fields": ("address", "latitude", "longitude")
         }),
-        ("Images", {
+        ("💳 Bank Account Details", { # NEW: Add bank details fieldset
+            "fields": ("owner_bank_name", "owner_account_number", "owner_account_name", "bank_verified"),
+            "classes": ("collapse",) # Collapse by default to keep interface clean
+        }),
+        ("🖼️ Images", {
             "fields": ("images",),
             "classes": ("collapse",)
         }),
-        ("Agreements", {
+        ("✅ Agreements", {
             "fields": (
                 "is_owner_or_representative",
                 "details_accurate",
@@ -55,11 +65,23 @@ class PropertyDraftAdmin(admin.ModelAdmin):
                 "signed_at"
             )
         }),
-        ("Metadata", {
+        ("📅 Metadata", {
             "fields": ("created_at", "updated_at", "submitted_for_review"),
             "classes": ("collapse",)
         }),
     )
+
+    # ✅ NEW: Bank Details Summary Column
+    def bank_details_summary(self, obj):
+        if not obj.owner_account_number:
+            return format_html("<span style='color: red;'>❌ No Bank Details</span>")
+        status = "✅ Verified" if obj.bank_verified else "🟡 Pending"
+        return format_html(
+            "<div>{}</div><div style='font-size: 0.8em; color: gray;'>{}</div>",
+            f"{obj.owner_bank_name} - {obj.owner_account_number}",
+            status
+        )
+    bank_details_summary.short_description = "Bank Details"
 
 
 # === ADMIN FOR FINAL LISTINGS (REVIEW & APPROVAL) ===
@@ -105,6 +127,20 @@ class PropertyAdmin(admin.ModelAdmin):
         return obj.draft.phone_number
     phone_number.short_description = "Phone"
     phone_number.admin_order_field = 'draft__phone_number'
+
+    # ✅ NEW: Bank Info Columns for List View
+    def owner_bank_name(self, obj):
+        return obj.draft.owner_bank_name or "—"
+    owner_bank_name.short_description = "Bank Name"
+
+    def owner_account_number(self, obj):
+        return obj.draft.owner_account_number or "—"
+    owner_account_number.short_description = "Account Number"
+
+    def bank_verified_status(self, obj):
+        verified = obj.draft.bank_verified
+        return format_html("✅ Yes") if verified else format_html("❌ No")
+    bank_verified_status.short_description = "Bank Verified?"
 
     def short_address(self, obj):
         addr = obj.draft.address
@@ -195,6 +231,10 @@ class PropertyAdmin(admin.ModelAdmin):
         'short_address',
         'submitted_at',
         'image_thumbnail',
+        # ✅ NEW: Add bank columns to list view
+        'owner_bank_name',
+        'owner_account_number',
+        'bank_verified_status',
         'description_preview',
         'known_issues_preview',
         'house_rules_preview',
@@ -216,6 +256,8 @@ class PropertyAdmin(admin.ModelAdmin):
         'draft__lease_term_preference',
         'draft__currency',
         'draft__created_at',
+        # ✅ NEW: Add bank verification filter
+        ('draft__bank_verified', admin.BooleanFieldListFilter),
     )
 
     search_fields = (
@@ -227,13 +269,16 @@ class PropertyAdmin(admin.ModelAdmin):
         'draft__user__username',
         'draft__user__email',
         'approved_by__username',
-        'draft__phone_number'
+        'draft__phone_number',
+        # ✅ NEW: Add bank fields to search
+        'draft__owner_bank_name',
+        'draft__owner_account_number',
     )
 
     date_hierarchy = 'draft__created_at'
 
 
-    # === DETAIL VIEW FIELDSETS (unchanged, already good) ===
+    # === DETAIL VIEW FIELDSETS (updated to include bank details) ===
     fieldsets = (
         ("📋 Listing Overview", {
             "fields": ("property_title", "owner_name", "submitted_at"),
@@ -261,7 +306,11 @@ class PropertyAdmin(admin.ModelAdmin):
                 "formatted_monthly_rent",
                 "currency",
                 "lease_term_preference_detail",
-                "phone_number_detail"
+                "phone_number_detail",
+                # ✅ NEW: Add bank details to financial info section
+                "owner_bank_name_detail",
+                "owner_account_number_detail",
+                "bank_verified_detail",
             ),
             "classes": ("wide",),
         }),
@@ -289,6 +338,10 @@ class PropertyAdmin(admin.ModelAdmin):
         'currency',
         'lease_term_preference_detail',
         'phone_number_detail',
+        # ✅ NEW: Add bank detail readonly fields
+        'owner_bank_name_detail',
+        'owner_account_number_detail',
+        'bank_verified_detail',
         'approved_at',
         'published_at',
         'approved_by',
@@ -340,6 +393,19 @@ class PropertyAdmin(admin.ModelAdmin):
     def phone_number_detail(self, obj):
         return obj.draft.phone_number
     phone_number_detail.short_description = "Phone Number"
+
+    # ✅ NEW: Bank Detail Readonly Fields for Detail View
+    def owner_bank_name_detail(self, obj):
+        return obj.draft.owner_bank_name or "—"
+    owner_bank_name_detail.short_description = "Owner Bank Name"
+
+    def owner_account_number_detail(self, obj):
+        return obj.draft.owner_account_number or "—"
+    owner_account_number_detail.short_description = "Owner Account Number"
+
+    def bank_verified_detail(self, obj):
+        return "✅ Yes" if obj.draft.bank_verified else "❌ No"
+    bank_verified_detail.short_description = "Bank Verified"
 
 
     # === SECURITY & UX ===

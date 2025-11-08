@@ -173,11 +173,13 @@ def submit_property_for_review(request, draft_id):
     """Submit the draft for admin approval"""
     draft = get_object_or_404(PropertyDraft, id=draft_id, user=request.user)
 
+    # ✅ UPDATED: Include bank details in required fields
     required_fields = [
         'title', 'monthly_rent', 'phone_number', 'description',
-        'address', 'latitude', 'longitude', 'images'
+        'address', 'latitude', 'longitude', 'images',
+        'owner_bank_name', 'owner_account_number', 'owner_account_name'
     ]
-    missing = [f for f in required_fields if not getattr(draft, f)]
+    missing = [f for f in required_fields if not getattr(draft, f, None)]
     if missing:
         return Response({
             "error": "Missing required fields",
@@ -196,6 +198,13 @@ def submit_property_for_review(request, draft_id):
             "error": "You must accept all terms and sign the agreement."
         }, status=400)
 
+    # ✅ NEW: Validate bank account number format
+    if draft.owner_account_number:
+        if not draft.owner_account_number.isdigit():
+            return Response({"error": "Account number must contain only digits"}, status=400)
+        if len(draft.owner_account_number) != 10:
+            return Response({"error": "Account number must be exactly 10 digits"}, status=400)
+
     if draft.latitude is not None and draft.longitude is not None:
         try:
             from .utils import reverse_geocode
@@ -207,12 +216,17 @@ def submit_property_for_review(request, draft_id):
 
     draft.signed_at = timezone.now()
     draft.submitted_for_review = True
-    draft.save()
+    # ✅ UPDATED: Include bank details in save
+    draft.save(update_fields=[
+        'signed_at', 'submitted_for_review',
+        'owner_bank_name', 'owner_account_number', 'owner_account_name'
+    ])
 
     Property.objects.get_or_create(draft=draft)
 
     return Response({
-        "message": "✅ Your listing has been submitted successfully and is now awaiting admin approval."
+        "message": "✅ Your listing has been submitted successfully and is now awaiting admin approval.",
+        "listing_id": draft.id
     }, status=200)
 
 

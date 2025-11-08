@@ -30,6 +30,7 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
         'address_truncated',
         'image_thumbnail',
         'submitted_badge',
+        'bank_details_summary', # NEW: Show bank details summary in list
         'created_at',
         'updated_at',
     )
@@ -48,6 +49,8 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
         'landlord_phone',
         'address',
         'description',
+        'owner_bank_name', # NEW: Add bank fields to search
+        'owner_account_number',
     )
     readonly_fields = ('created_at', 'updated_at', 'signed_at')
     actions = ['mark_submitted', 'mark_not_submitted']
@@ -86,6 +89,18 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
     submitted_badge.short_description = "Submitted?"
     submitted_badge.admin_order_field = 'submitted_for_review'
 
+    # ✅ NEW: Bank Details Summary Column
+    def bank_details_summary(self, obj):
+        if not obj.owner_account_number:
+            return format_html("<span style='color: red;'>❌ No Bank Details</span>")
+        status = "✅ Verified" if obj.bank_verified else "🟡 Pending"
+        return format_html(
+            "<div>{}</div><div style='font-size: 0.8em; color: gray;'>{}</div>",
+            f"{obj.owner_bank_name} - {obj.owner_account_number}",
+            status
+        )
+    bank_details_summary.short_description = "Bank Details"
+
     # === Fieldsets (Edit Page Layout) ===
     fieldsets = (
         ("📋 Agent & Landlord Info", {
@@ -97,6 +112,10 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
         }),
         ("📍 Location", {
             "fields": ("address", "latitude", "longitude")
+        }),
+        ("💳 Bank Account Details", { # NEW: Add bank details fieldset
+            "fields": ("owner_bank_name", "owner_account_number", "owner_account_name", "bank_verified"),
+            "classes": ("collapse",) # Collapse by default to keep interface clean
         }),
         ("🖼️ Images", {
             "fields": ("images",),
@@ -179,6 +198,20 @@ class AgentPropertyAdmin(admin.ModelAdmin):
     def landlord_email(self, obj):
         return obj.draft.landlord_email or "—"
     landlord_email.short_description = "Landlord Email"
+
+    # ✅ NEW: Bank Info Columns for List View
+    def owner_bank_name(self, obj):
+        return obj.draft.owner_bank_name or "—"
+    owner_bank_name.short_description = "Bank Name"
+
+    def owner_account_number(self, obj):
+        return obj.draft.owner_account_number or "—"
+    owner_account_number.short_description = "Account Number"
+
+    def bank_verified_status(self, obj):
+        verified = obj.draft.bank_verified
+        return format_html("✅ Yes") if verified else format_html("❌ No")
+    bank_verified_status.short_description = "Bank Verified?"
 
     def short_address(self, obj):
         addr = obj.draft.address
@@ -269,6 +302,10 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'short_address',
         'submitted_at',
         'image_thumbnail',
+        # ✅ NEW: Add bank columns to list view
+        'owner_bank_name',
+        'owner_account_number',
+        'bank_verified_status',
         'description_preview',
         'known_issues_preview',
         'house_rules_preview',
@@ -290,6 +327,8 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'draft__lease_term_preference',
         'draft__currency',
         'draft__created_at',
+        # ✅ NEW: Add bank verification filter
+        ('draft__bank_verified', admin.BooleanFieldListFilter),
     )
 
     search_fields = (
@@ -303,6 +342,9 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'approved_by__username',
         'draft__landlord_name',
         'draft__landlord_phone',
+        # ✅ NEW: Add bank fields to search
+        'draft__owner_bank_name',
+        'draft__owner_account_number',
     )
 
     date_hierarchy = 'draft__created_at'
@@ -335,7 +377,11 @@ class AgentPropertyAdmin(admin.ModelAdmin):
                 "formatted_monthly_rent",
                 "currency",
                 "lease_term_preference_detail",
-                "landlord_contact_info"
+                "landlord_contact_info",
+                # ✅ NEW: Add bank details to financial info section
+                "owner_bank_name_detail",
+                "owner_account_number_detail",
+                "bank_verified_detail",
             ),
             "classes": ("wide",),
         }),
@@ -363,6 +409,10 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'currency',
         'lease_term_preference_detail',
         'landlord_contact_info',
+        # ✅ NEW: Add bank detail readonly fields
+        'owner_bank_name_detail',
+        'owner_account_number_detail',
+        'bank_verified_detail',
         'approved_at',
         'published_at',
         'approved_by',
@@ -418,6 +468,19 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         email = d.landlord_email or "No email"
         return format_html(f"{name}<br>{phone}<br>{email}")
     landlord_contact_info.short_description = "Landlord Contact"
+
+    # ✅ NEW: Bank Detail Readonly Fields for Detail View
+    def owner_bank_name_detail(self, obj):
+        return obj.draft.owner_bank_name or "—"
+    owner_bank_name_detail.short_description = "Owner Bank Name"
+
+    def owner_account_number_detail(self, obj):
+        return obj.draft.owner_account_number or "—"
+    owner_account_number_detail.short_description = "Owner Account Number"
+
+    def bank_verified_detail(self, obj):
+        return "✅ Yes" if obj.draft.bank_verified else "❌ No"
+    bank_verified_detail.short_description = "Bank Verified"
 
     # === SECURITY & UX ===
     def has_add_permission(self, request):

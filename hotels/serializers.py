@@ -1,3 +1,5 @@
+# hotels/serializers.py
+
 from rest_framework import serializers
 from django.conf import settings
 from .models import HotelListing, HotelFeature, RoomType
@@ -58,6 +60,11 @@ class HotelListingSerializer(serializers.ModelSerializer):
             'agrees_to_escrow_process',
             'digital_signature',
             'signed_at',
+            # ✅ NEW: Bank account details
+            'owner_bank_name',
+            'owner_account_number',
+            'owner_account_name',
+            'bank_verified',
             # Hotel-level images (exterior, lobby, pool, etc.)
             'images'  # ✅ Added
         ]
@@ -65,7 +72,8 @@ class HotelListingSerializer(serializers.ModelSerializer):
             'id', 'status', 'created_at', 'updated_at', 'published_at',
             'latitude', 'longitude', 'city', 'state',
             'signed_at',
-            'images'  # ✅ Optional: make read-only if frontend only uploads via dedicated endpoint
+            'images', # ✅ Optional: make read-only if frontend only uploads via dedicated endpoint
+            'bank_verified', # Bank verification is typically handled by admin/external service
         ]
 
     def create(self, validated_data):

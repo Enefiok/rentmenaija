@@ -55,6 +55,12 @@ class PropertyDraft(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
 
+    # ✅ NEW: Bank account details for the property owner (landlord)
+    owner_bank_name = models.CharField(max_length=100, blank=True, null=True, help_text="Bank name of the property owner")
+    owner_account_number = models.CharField(max_length=20, blank=True, null=True, help_text="Account number of the property owner")
+    owner_account_name = models.CharField(max_length=200, blank=True, null=True, help_text="Account name of the property owner")
+    bank_verified = models.BooleanField(default=False, help_text="Whether the bank details have been verified")
+
     # Step 3: Confirmations
     is_owner_or_representative = models.BooleanField(default=False)
     details_accurate = models.BooleanField(default=False)
@@ -111,6 +117,12 @@ class Property(models.Model):
     rejected_reason = models.TextField(blank=True, null=True)
     published_at = models.DateTimeField(null=True, blank=True)
 
+    # ✅ NEW: Bank account details for the property owner (landlord) - copied from draft after approval
+    owner_bank_name = models.CharField(max_length=100, blank=True, null=True, help_text="Bank name of the property owner")
+    owner_account_number = models.CharField(max_length=20, blank=True, null=True, help_text="Account number of the property owner")
+    owner_account_name = models.CharField(max_length=200, blank=True, null=True, help_text="Account name of the property owner")
+    bank_verified = models.BooleanField(default=False, help_text="Whether the bank details have been verified")
+
     def approve(self, admin_user):
         if self.status != 'pending':
             return
@@ -118,6 +130,14 @@ class Property(models.Model):
         self.approved_by = admin_user
         self.approved_at = timezone.now()
         self.published_at = timezone.now()
+        
+        # ✅ NEW: Copy bank details from the draft when approving
+        draft = self.draft
+        self.owner_bank_name = draft.owner_bank_name
+        self.owner_account_number = draft.owner_account_number
+        self.owner_account_name = draft.owner_account_name
+        self.bank_verified = draft.bank_verified
+        
         self.save()
 
     def reject(self, admin_user, reason=""):

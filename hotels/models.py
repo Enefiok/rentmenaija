@@ -1,3 +1,5 @@
+# hotels/models.py
+
 from django.db import models
 from django.conf import settings  # ✅ Use settings.AUTH_USER_MODEL
 from django.utils import timezone
@@ -34,6 +36,12 @@ class HotelListing(models.Model):
 
     # Hotel-level images (exterior, lobby, pool, etc.)
     images = models.JSONField(default=list) 
+
+    # ✅ NEW: Bank account details for the hotel owner
+    owner_bank_name = models.CharField(max_length=100, blank=True, null=True, help_text="Bank name of the hotel owner")
+    owner_account_number = models.CharField(max_length=20, blank=True, null=True, help_text="Account number of the hotel owner")
+    owner_account_name = models.CharField(max_length=200, blank=True, null=True, help_text="Account name of the hotel owner")
+    bank_verified = models.BooleanField(default=False, help_text="Whether the bank details have been verified")
 
     # Legal Declarations (from UI checkboxes & signature)
     is_owner_or_representative = models.BooleanField(default=False)
