@@ -278,42 +278,10 @@ class PropertyAdmin(admin.ModelAdmin):
     date_hierarchy = 'draft__created_at'
 
 
-    # === DETAIL VIEW FIELDSETS (updated to include bank details) ===
+    # === DETAIL VIEW FIELDSETS (CORRECTED) ===
+    # Only include actual model fields or admin readonly fields that return values.
+    # Do NOT include methods meant only for list_display.
     fieldsets = (
-        ("📋 Listing Overview", {
-            "fields": ("property_title", "owner_name", "submitted_at"),
-            "classes": ("wide",),
-        }),
-        ("📍 Location & Address", {
-            "fields": (
-                "full_address",
-                "latitude",
-                "longitude"
-            ),
-            "classes": ("wide",),
-        }),
-        ("📄 Full Details", {
-            "fields": (
-                "description",
-                "known_issues",
-                "house_rules",
-                "image_thumbnails",
-            ),
-            "classes": ("wide",),
-        }),
-        ("💰 Financial Info", {
-            "fields": (
-                "formatted_monthly_rent",
-                "currency",
-                "lease_term_preference_detail",
-                "phone_number_detail",
-                # ✅ NEW: Add bank details to financial info section
-                "owner_bank_name_detail",
-                "owner_account_number_detail",
-                "bank_verified_detail",
-            ),
-            "classes": ("wide",),
-        }),
         ("✅ Approval Status", {
             "fields": (
                 "status",
@@ -324,6 +292,42 @@ class PropertyAdmin(admin.ModelAdmin):
             ),
             "classes": ("wide",),
         }),
+        ("📍 Location & Address (from Draft)", {
+            "fields": (
+                "full_address", # Admin readonly field showing draft.address
+                "latitude",     # Admin readonly field showing draft.latitude
+                "longitude"     # Admin readonly field showing draft.longitude
+            ),
+            "classes": ("wide",),
+        }),
+        ("📄 Full Details (from Draft)", {
+            "fields": (
+                "description", # Admin readonly field showing draft.description
+                "known_issues", # Admin readonly field showing draft.known_issues
+                "house_rules", # Admin readonly field showing draft.house_rules
+                "image_thumbnails", # Admin readonly field showing draft.images
+            ),
+            "classes": ("wide",),
+        }),
+        ("💰 Financial Info (from Draft)", {
+            "fields": (
+                "formatted_monthly_rent", # Admin readonly field showing draft.monthly_rent
+                "currency", # Admin readonly field showing draft.currency
+                "lease_term_preference_detail", # Admin readonly field showing draft.lease_term_preference
+                "phone_number_detail", # Admin readonly field showing draft.phone_number
+                # ✅ NEW: Add bank details to financial info section
+                "owner_bank_name_detail", # Admin readonly field showing draft.owner_bank_name
+                "owner_account_number_detail", # Admin readonly field showing draft.owner_account_number
+                "bank_verified_detail", # Admin readonly field showing draft.bank_verified
+            ),
+            "classes": ("wide",),
+        }),
+        # If Property model has any direct fields (not from draft), add them here.
+        # Example:
+        # ("Direct Property Fields", {
+        #     "fields": ("direct_field1", "direct_field2"),
+        #     "classes": ("wide",),
+        # }),
     )
 
     readonly_fields = (
@@ -335,7 +339,7 @@ class PropertyAdmin(admin.ModelAdmin):
         'house_rules',
         'image_thumbnails',
         'formatted_monthly_rent',
-        'currency',
+        'currency', # Ensure this method exists if currency is only on draft
         'lease_term_preference_detail',
         'phone_number_detail',
         # ✅ NEW: Add bank detail readonly fields
@@ -349,28 +353,23 @@ class PropertyAdmin(admin.ModelAdmin):
     )
 
     def full_address(self, obj):
+        # Assuming obj.draft exists and links to PropertyDraft
         return obj.draft.address or "-"
-    full_address.short_description = "Full Address"
 
     def latitude(self, obj):
         return obj.draft.latitude
-    latitude.short_description = "Latitude"
 
     def longitude(self, obj):
         return obj.draft.longitude
-    longitude.short_description = "Longitude"
 
     def description(self, obj):
         return obj.draft.description or "No description provided."
-    description.short_description = "Description"
 
     def known_issues(self, obj):
         return obj.draft.known_issues or "No known issues reported."
-    known_issues.short_description = "Known Issues"
 
     def house_rules(self, obj):
         return obj.draft.house_rules or "No house rules specified."
-    house_rules.short_description = "House Rules"
 
     def image_thumbnails(self, obj):
         if not obj.draft.images:
@@ -384,28 +383,25 @@ class PropertyAdmin(admin.ModelAdmin):
 
     def formatted_monthly_rent(self, obj):
         return f"₦{obj.draft.monthly_rent:,.0f}"
-    formatted_monthly_rent.short_description = "Monthly Rent"
+
+    def currency(self, obj): # If currency is only on draft, you need this method
+        return obj.draft.currency
 
     def lease_term_preference_detail(self, obj):
         return obj.draft.lease_term_preference.replace('_', ' ').title()
-    lease_term_preference_detail.short_description = "Lease Term"
 
     def phone_number_detail(self, obj):
         return obj.draft.phone_number
-    phone_number_detail.short_description = "Phone Number"
 
     # ✅ NEW: Bank Detail Readonly Fields for Detail View
     def owner_bank_name_detail(self, obj):
         return obj.draft.owner_bank_name or "—"
-    owner_bank_name_detail.short_description = "Owner Bank Name"
 
     def owner_account_number_detail(self, obj):
         return obj.draft.owner_account_number or "—"
-    owner_account_number_detail.short_description = "Owner Account Number"
 
     def bank_verified_detail(self, obj):
         return "✅ Yes" if obj.draft.bank_verified else "❌ No"
-    bank_verified_detail.short_description = "Bank Verified"
 
 
     # === SECURITY & UX ===
