@@ -97,8 +97,14 @@ class PropertyAdmin(admin.ModelAdmin):
         return obj.draft.currency
     currency.short_description = "Currency"
 
+    # --- FIXED: Added null check for lease_term_preference ---
     def lease_term_preference(self, obj):
-        return obj.draft.lease_term_preference.replace('_', ' ').title()
+        draft_obj = getattr(obj, 'draft', None)
+        if draft_obj:
+            value = getattr(draft_obj, 'lease_term_preference', None)
+            if value is not None:
+                return value.replace('_', ' ').title()
+        return "-"  # Default value if draft or preference is None
     lease_term_preference.short_description = "Lease Term"
 
     def phone_number(self, obj):
@@ -333,8 +339,14 @@ class PropertyAdmin(admin.ModelAdmin):
         return f"₦{obj.draft.monthly_rent:,.0f}"
     formatted_monthly_rent.short_description = "Monthly Rent"
 
+    # --- FIXED: Added null check for lease_term_preference_detail ---
     def lease_term_preference_detail(self, obj):
-        return obj.draft.lease_term_preference.replace('_', ' ').title()
+        draft_obj = getattr(obj, 'draft', None)
+        if draft_obj:
+            value = getattr(draft_obj, 'lease_term_preference', None)
+            if value is not None:
+                return value.replace('_', ' ').title()
+        return "-"  # Default value if draft or preference is None
     lease_term_preference_detail.short_description = "Lease Term"
 
     def phone_number_detail(self, obj):
