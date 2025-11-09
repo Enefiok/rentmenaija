@@ -55,6 +55,14 @@ class PropertyDraftAdmin(admin.ModelAdmin):
                 "signed_at"
             )
         }),
+        ("Bank Details", {
+            "fields": (
+                "owner_bank_name",
+                "owner_account_number",
+                "owner_account_name",
+                "bank_verified",
+            ),
+        }),
         ("Metadata", {
             "fields": ("created_at", "updated_at", "submitted_for_review"),
             "classes": ("collapse",)
@@ -182,6 +190,28 @@ class PropertyAdmin(admin.ModelAdmin):
     submitted_for_review_status.short_description = "Submitted?"
     submitted_for_review_status.admin_order_field = 'draft__submitted_for_review'
 
+    # --- NEW: Bank Details for List View ---
+    def bank_name(self, obj):
+        # Check both Property and its related draft for bank details
+        name = obj.owner_bank_name or getattr(obj.draft, 'owner_bank_name', None)
+        return name or "-" # Return "-" if neither has the value
+    bank_name.short_description = "Bank Name"
+
+    def account_number(self, obj):
+        number = obj.owner_account_number or getattr(obj.draft, 'owner_account_number', None)
+        return number or "-" # Return "-" if neither has the value
+    account_number.short_description = "Account Number"
+
+    def account_name(self, obj):
+        name = obj.owner_account_name or getattr(obj.draft, 'owner_account_name', None)
+        return name or "-" # Return "-" if neither has the value
+    account_name.short_description = "Account Name"
+
+    def bank_verified_status(self, obj):
+        verified = obj.bank_verified or getattr(obj.draft, 'bank_verified', False)
+        return format_html("✅ Yes") if verified else format_html("❌ No")
+    bank_verified_status.short_description = "Bank Verified?"
+
     def approved_by_info(self, obj):
         if obj.approved_by:
             return format_html("{}<br><small>{}</small>", obj.approved_by.username, obj.approved_at.strftime("%b %d"))
@@ -210,6 +240,10 @@ class PropertyAdmin(admin.ModelAdmin):
         'fraud_responsible',
         'allow_escrow_status',
         'submitted_for_review_status',
+        'bank_name',          # Added
+        'account_number',     # Added
+        'account_name',       # Added
+        'bank_verified_status', # Added
         'approved_by_info',
     )
 
@@ -222,6 +256,8 @@ class PropertyAdmin(admin.ModelAdmin):
         'draft__lease_term_preference',
         'draft__currency',
         'draft__created_at',
+        'bank_verified', # Filter by bank verification status on Property
+        ('draft__bank_verified', admin.BooleanFieldListFilter), # Filter by bank verification status on Draft
     )
 
     search_fields = (
@@ -233,13 +269,17 @@ class PropertyAdmin(admin.ModelAdmin):
         'draft__user__username',
         'draft__user__email',
         'approved_by__username',
-        'draft__phone_number'
+        'draft__phone_number',
+        'owner_bank_name', # Search Property bank name
+        'draft__owner_bank_name', # Search Draft bank name
+        'owner_account_number', # Search Property account number
+        'draft__owner_account_number', # Search Draft account number
     )
 
     date_hierarchy = 'draft__created_at'
 
 
-    # === DETAIL VIEW FIELDSETS (unchanged, already good) ===
+    # === DETAIL VIEW FIELDSETS (updated to include bank details) ===
     fieldsets = (
         ("📋 Listing Overview", {
             "fields": ("property_title", "owner_name", "submitted_at"),
@@ -267,7 +307,12 @@ class PropertyAdmin(admin.ModelAdmin):
                 "formatted_monthly_rent",
                 "currency",
                 "lease_term_preference_detail",
-                "phone_number_detail"
+                "phone_number_detail",
+                # Added Bank Details fields for the detail view
+                "owner_bank_name_detail",
+                "owner_account_number_detail",
+                "owner_account_name_detail",
+                "bank_verified_detail",
             ),
             "classes": ("wide",),
         }),
@@ -298,7 +343,12 @@ class PropertyAdmin(admin.ModelAdmin):
         'approved_at',
         'published_at',
         'approved_by',
-        'status'
+        'status',
+        # Added Bank Details readonly fields for the detail view
+        'owner_bank_name_detail',
+        'owner_account_number_detail',
+        'owner_account_name_detail',
+        'bank_verified_detail',
     )
 
     def full_address(self, obj):
@@ -352,6 +402,30 @@ class PropertyAdmin(admin.ModelAdmin):
     def phone_number_detail(self, obj):
         return obj.draft.phone_number
     phone_number_detail.short_description = "Phone Number"
+
+    # --- NEW: Bank Details for Detail View Read-Only Fields ---
+    def owner_bank_name_detail(self, obj):
+        # Prefer the bank details stored directly on the Property model after approval
+        # Fallback to the details on the draft if not set on the Property
+        name = obj.owner_bank_name or getattr(obj.draft, 'owner_bank_name', None)
+        return name or "-"
+    owner_bank_name_detail.short_description = "Bank Name (Property)"
+
+    def owner_account_number_detail(self, obj):
+        number = obj.owner_account_number or getattr(obj.draft, 'owner_account_number', None)
+        return number or "-"
+    owner_account_number_detail.short_description = "Account Number (Property)"
+
+    def owner_account_name_detail(self, obj):
+        name = obj.owner_account_name or getattr(obj.draft, 'owner_account_name', None)
+        return name or "-"
+    owner_account_name_detail.short_description = "Account Name (Property)"
+
+    def bank_verified_detail(self, obj):
+        # Check the Property model first, then the draft
+        verified = obj.bank_verified or getattr(obj.draft, 'bank_verified', False)
+        return "Yes" if verified else "No"
+    bank_verified_detail.short_description = "Bank Verified (Property)"
 
 
     # === SECURITY & UX ===
