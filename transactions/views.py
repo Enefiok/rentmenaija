@@ -6,6 +6,7 @@ import logging
 from django.shortcuts import get_object_or_404 # ✅ ADDED: Import for release_funds
 from django.conf import settings
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt # Add this import
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
