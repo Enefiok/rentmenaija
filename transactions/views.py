@@ -6,7 +6,6 @@ import logging
 from django.shortcuts import get_object_or_404 # ✅ ADDED: Import for release_funds
 from django.conf import settings
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt # Add this import
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -45,7 +44,7 @@ def get_landlord_or_agent_user(listing_type, listing_id):
 @permission_classes([IsAuthenticated]) # Require login for lease payments
 def initiate_lease_payment(request):
     """
-    Initiate a payment for a landlord or agent listing (e.g., security deposit, first month rent, full lease amount).
+    Initiate a payment for a landlord or agent listing (e.g., security deposit, first month rent).
     Requires: listing_type ('landlord_listing' or 'agent_listing'), listing_id, payment_type.
     Uses authenticated user as the tenant.
     """
@@ -73,9 +72,9 @@ def initiate_lease_payment(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Validate payment_type - Include 'full_lease_payment'
+    # Validate payment_type
     VALID_PAYMENT_TYPES = [
-        'security_deposit', 'first_month_rent', 'last_month_rent', 'booking_fee', 'full_lease_payment'
+        'security_deposit', 'first_month_rent', 'last_month_rent', 'booking_fee'
     ]
     if payment_type not in VALID_PAYMENT_TYPES:
          logger.error(f"❌ Invalid payment_type: {payment_type}")
@@ -97,34 +96,6 @@ def initiate_lease_payment(request):
             elif payment_type == 'booking_fee':
                  # Example: Fixed booking fee, get from settings or listing detail if variable
                  amount = 10000.00 # Example fixed amount
-            # --- NEW: Calculate full lease amount ---
-            elif payment_type == 'full_lease_payment':
-                lease_term = listing_obj.lease_term_preference # e.g., '1_year', '2_years', 'monthly', '6_months'
-                monthly_rent = float(listing_obj.monthly_rent)
-
-                # Define a mapping for lease terms to number of months
-                lease_term_to_months = {
-                    'monthly': 1,
-                    '6_months': 6,
-                    '1_year': 12,
-                    '2_years': 24,
-                    # Add more if needed
-                }
-
-                # Calculate the number of months based on the lease term
-                num_months = lease_term_to_months.get(lease_term)
-
-                if num_months is None:
-                    logger.error(f"❌ Unsupported lease_term_preference for full payment: {lease_term}")
-                    return Response(
-                        {"error": f"Full lease payment calculation not supported for lease term: {lease_term}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                # Calculate the total amount for the full lease term
-                amount = monthly_rent * num_months
-                logger.info(f"Calculated full lease amount: {amount} for {num_months} months (term: {lease_term})")
-            # --- END NEW ---
             else:
                  # Handle other types or require amount from frontend if not derivable
                  logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
@@ -142,31 +113,6 @@ def initiate_lease_payment(request):
                  amount = float(listing_obj.monthly_rent)
             elif payment_type == 'booking_fee':
                  amount = 10000.00 # Example
-            # --- NEW: Calculate full lease amount for agent listing ---
-            elif payment_type == 'full_lease_payment':
-                lease_term = listing_obj.lease_term_preference
-                monthly_rent = float(listing_obj.monthly_rent)
-
-                lease_term_to_months = {
-                    'monthly': 1,
-                    '6_months': 6,
-                    '1_year': 12,
-                    '2_years': 24,
-                    # Add more if needed
-                }
-
-                num_months = lease_term_to_months.get(lease_term)
-
-                if num_months is None:
-                    logger.error(f"❌ Unsupported lease_term_preference for agent listing full payment: {lease_term}")
-                    return Response(
-                        {"error": f"Full lease payment calculation not supported for agent listing term: {lease_term}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                amount = monthly_rent * num_months
-                logger.info(f"Calculated full lease amount for agent: {amount} for {num_months} months (term: {lease_term})")
-            # --- END NEW ---
             else:
                  logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
                  return Response(
@@ -239,7 +185,7 @@ def initiate_lease_payment(request):
     )
     logger.info(f"✅ LeasePayment created: ID={lease_payment.id}, Ref={transaction_ref}, Amount={amount}")
 
-             # --- NEW: Link to existing Booking if it exists and update status ---
+    # --- NEW: Link to existing Booking if it exists and update status ---
     try:
         # Find the saved booking for this listing and user
         original_booking = Booking.objects.get(
@@ -892,4 +838,4 @@ def release_funds(request, booking_id):
             "error": f"An unexpected error occurred: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# You can add more views here later if needed, e.g., for retrieving lease payment status, etc.   
+# You can add more views here later if needed, e.g., for retrieving lease payment status, etc.
