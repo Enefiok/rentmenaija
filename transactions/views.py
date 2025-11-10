@@ -1,5 +1,4 @@
 # transactions/views.py
-
 import uuid
 import requests
 import logging
@@ -12,11 +11,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
 from datetime import timedelta
-
 from .models import LeasePayment, Booking # Import the new model from *this* app
 from listings.models import PropertyDraft, Property # Import Landlord Listing models (draft and published)
 from agent_listings.models import AgentPropertyDraft, AgentProperty # Import Agent Listing models (draft and published)
-
 logger = logging.getLogger(__name__)
 
 # --- Helper function to get landlord/agent user ---
@@ -39,7 +36,6 @@ def get_landlord_or_agent_user(listing_type, listing_id):
     else:
         raise ValueError("Invalid listing type")
 
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated]) # Require login for lease payments
 def initiate_lease_payment(request):
@@ -50,12 +46,10 @@ def initiate_lease_payment(request):
     """
     logger.info("🔥 INITIATE_LEASE_PAYMENT CALLED")
     logger.info(f"User: {request.user.email}, Data: {request.data}")
-
     data = request.data
     listing_type = data.get('listing_type')
     listing_id = data.get('listing_id')
     payment_type = data.get('payment_type')
-
     if not all([listing_type, listing_id, payment_type]):
         missing = [k for k in ['listing_type', 'listing_id', 'payment_type'] if not data.get(k)]
         logger.error(f"❌ Missing fields: {missing}")
@@ -63,7 +57,6 @@ def initiate_lease_payment(request):
             {'error': 'Missing required fields', 'missing': missing},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Validate listing_type
     if listing_type not in ['landlord_listing', 'agent_listing', 'hotel_listing']:
         logger.error(f"❌ Invalid listing_type: {listing_type}")
@@ -71,7 +64,6 @@ def initiate_lease_payment(request):
             {"error": "Invalid listing_type. Must be 'landlord_listing', 'agent_listing', or 'hotel_listing'."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Validate payment_type - Include 'full_lease_payment'
     VALID_PAYMENT_TYPES = [
         'security_deposit', 'first_month_rent', 'last_month_rent', 'booking_fee', 'full_lease_payment'
@@ -82,7 +74,6 @@ def initiate_lease_payment(request):
              {"error": f"Invalid payment_type. Must be one of: {VALID_PAYMENT_TYPES}."},
              status=status.HTTP_400_BAD_REQUEST
          )
-
     # Get the listing object to validate it exists and get details (like rent for calculation)
     try:
         if listing_type == 'landlord_listing':
@@ -100,7 +91,6 @@ def initiate_lease_payment(request):
             elif payment_type == 'full_lease_payment':
                 lease_term = listing_obj.lease_term_preference # e.g., '1_year', '2_years', 'monthly', '6_months'
                 monthly_rent = float(listing_obj.monthly_rent)
-
                 # Define a mapping for lease terms to number of months
                 lease_term_to_months = {
                     'monthly': 1,
@@ -109,17 +99,14 @@ def initiate_lease_payment(request):
                     '2_years': 24,
                     # Add more if needed
                 }
-
                 # Calculate the number of months based on the lease term
                 num_months = lease_term_to_months.get(lease_term)
-
                 if num_months is None:
                     logger.error(f"❌ Unsupported lease_term_preference for full payment: {lease_term}")
                     return Response(
                         {"error": f"Full lease payment calculation not supported for lease term: {lease_term}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
                 # Calculate the total amount for the full lease term
                 amount = monthly_rent * num_months
                 logger.info(f"Calculated full lease amount: {amount} for {num_months} months (term: {lease_term})")
@@ -131,7 +118,6 @@ def initiate_lease_payment(request):
                      {"error": f"Amount calculation not supported for {payment_type}"},
                      status=status.HTTP_400_BAD_REQUEST
                  )
-
         elif listing_type == 'agent_listing':
             listing_obj = AgentPropertyDraft.objects.get(id=listing_id) # Query AgentPropertyDraft
             # Similar logic for agent listing
@@ -145,7 +131,6 @@ def initiate_lease_payment(request):
             elif payment_type == 'full_lease_payment':
                 lease_term = listing_obj.lease_term_preference
                 monthly_rent = float(listing_obj.monthly_rent)
-
                 lease_term_to_months = {
                     'monthly': 1,
                     '6_months': 6,
@@ -153,16 +138,13 @@ def initiate_lease_payment(request):
                     '2_years': 24,
                     # Add more if needed
                 }
-
                 num_months = lease_term_to_months.get(lease_term)
-
                 if num_months is None:
                     logger.error(f"❌ Unsupported lease_term_preference for agent listing full payment: {lease_term}")
                     return Response(
                         {"error": f"Full lease payment calculation not supported for agent listing term: {lease_term}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
                 amount = monthly_rent * num_months
                 logger.info(f"Calculated full lease amount for agent: {amount} for {num_months} months (term: {lease_term})")
             # --- END NEW ---
@@ -178,27 +160,23 @@ def initiate_lease_payment(request):
             # Calculate amount for hotel stay (nightly rate * number of nights)
             check_in = data.get('check_in_date')
             check_out = data.get('check_out_date')
-            
             if not check_in or not check_out:
                 return Response(
                     {"error": "Check-in and check-out dates are required for hotel bookings."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-                
             # Calculate number of nights
             from datetime import datetime
             check_in_date = datetime.strptime(check_in, '%Y-%m-%d').date()
             check_out_date = datetime.strptime(check_out, '%Y-%m-%d').date()
             nights = (check_out_date - check_in_date).days
             amount = float(listing_obj.price_per_night) * nights
-
     except (PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist, HotelListing.DoesNotExist): # Catch specific DoesNotExist
         logger.error(f"❌ {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
         return Response(
             {"error": f"{listing_type.replace('_', ' ').title()} not found."},
             status=status.HTTP_404_NOT_FOUND
         )
-
     # Determine the landlord/agent user for the payment record
     try:
         if listing_type in ['landlord_listing', 'agent_listing']:
@@ -221,10 +199,8 @@ def initiate_lease_payment(request):
              {"error": f"{listing_type.replace('_', ' ').title()} owner not found."},
              status=status.HTTP_404_NOT_FOUND
          )
-
     # Generate unique transaction reference
     transaction_ref = f"LEASEPAY_{uuid.uuid4().hex[:12].upper()}"
-
     # Create the LeasePayment record in the database (status: pending)
     lease_payment = LeasePayment.objects.create(
         listing_type=listing_type,
@@ -237,7 +213,6 @@ def initiate_lease_payment(request):
         transaction_ref=transaction_ref
     )
     logger.info(f"✅ LeasePayment created: ID={lease_payment.id}, Ref={transaction_ref}, Amount={amount}")
-
     # --- NEW: Link to existing Booking if it exists and update status ---
     try:
         # Find the saved booking for this listing and user
@@ -275,7 +250,6 @@ def initiate_lease_payment(request):
         logger.info(f"📝 New Booking created for standalone payment: ID={booking.id}")
     except Booking.MultipleObjectsReturned:
         logger.error(f"❌ Multiple saved Bookings found for user {request.user.id}, {listing_type} ID {listing_id}. Cannot link LeasePayment #{lease_payment.id}.")
-    # --- END NEW ---
 
     # --- Call Squad API ---
     if not all([
@@ -289,7 +263,6 @@ def initiate_lease_payment(request):
             {'error': 'Payment gateway not configured'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
     amount_kobo = int(amount * 100) # Convert Naira to Kobo
     squad_payload = {
         "amount": str(amount_kobo),
@@ -306,12 +279,10 @@ def initiate_lease_payment(request):
             "listing_id": listing_id
         }
     }
-
     headers = {
         "Authorization": f"Bearer {settings.SQUAD_SECRET_KEY}",
         "Content-Type": "application/json"
     }
-
     logger.info(f"📤 Calling Squad API for LeasePayment {lease_payment.id}...")
     try:
         resp = requests.post(
@@ -320,10 +291,8 @@ def initiate_lease_payment(request):
             headers=headers,
             timeout=10
         )
-
         result = resp.json()
         logger.info(f"Squad Response Status: {resp.status_code}, Data: {result}")
-
         if resp.status_code == 200 and result.get('status') == 200:
             checkout_url = result['data']['checkout_url'].strip()
             logger.info(f"✅ Success! Checkout URL: {checkout_url}")
@@ -341,7 +310,6 @@ def initiate_lease_payment(request):
                 {"error": msg},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
     except requests.exceptions.RequestException as e:
         # Handle network errors or Squad API being down
         logger.exception(f"💥 Error calling Squad API for LeasePayment {lease_payment.id}")
@@ -361,7 +329,6 @@ def initiate_lease_payment(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-
 # --- Updated Booking Views for Escrow System ---
 
 @api_view(['POST'])
@@ -373,13 +340,11 @@ def save_booking(request):
     """
     logger.info("🔥 SAVE_BOOKING CALLED")
     logger.info(f"User: {request.user.email}, Data: {request.data}")
-
     data = request.data
     listing_type = data.get('listing_type')
     listing_id = data.get('listing_id')
     check_in_date = data.get('check_in_date')  # For hotels
     check_out_date = data.get('check_out_date')  # For hotels
-
     if not all([listing_type, listing_id]):
         missing = [k for k in ['listing_type', 'listing_id'] if not data.get(k)]
         logger.error(f"❌ Missing fields: {missing}")
@@ -387,7 +352,6 @@ def save_booking(request):
             {'error': 'Missing required fields', 'missing': missing},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Validate listing_type
     VALID_LISTING_TYPES = ['landlord_listing', 'agent_listing', 'hotel_listing']
     if listing_type not in VALID_LISTING_TYPES:
@@ -396,7 +360,6 @@ def save_booking(request):
             {"error": f"Invalid listing_type. Must be one of: {VALID_LISTING_TYPES}."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Validate that the listing exists (check published listings)
     listing_exists = False
     try:
@@ -419,14 +382,12 @@ def save_booking(request):
             {"error": f"Published {listing_type.replace('_', ' ').title()} not found."},
             status=status.HTTP_404_NOT_FOUND
         )
-
     if not listing_exists:
         logger.error(f"❌ Published {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
         return Response(
             {"error": f"Published {listing_type.replace('_', ' ').title()} not found."},
             status=status.HTTP_404_NOT_FOUND
         )
-
     # Check if the user already has this property saved
     existing_booking = Booking.objects.filter(
         user=request.user,
@@ -434,14 +395,12 @@ def save_booking(request):
         listing_id=listing_id,
         status__in=['saved', 'paid_pending_confirmation'] # Don't allow saving if already confirmed/cancelled for this property
     ).first()
-
     if existing_booking:
         logger.warning(f"⚠️ User {request.user.email} already has {listing_type} ID {listing_id} in bookings with status {existing_booking.status}")
         return Response(
             {"error": f"You have already saved this {listing_type.replace('_', ' ')}."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Create the new booking record
     booking_data = {
         'user': request.user,
@@ -449,21 +408,17 @@ def save_booking(request):
         'listing_id': listing_id,
         'status': 'saved' # Default status is saved
     }
-    
     if listing_type == 'hotel_listing':
         booking_data['check_in_date'] = check_in_date
         booking_data['check_out_date'] = check_out_date
-
     booking = Booking.objects.create(**booking_data)
     logger.info(f"✅ Booking created: ID={booking.id}, User={request.user.username}, Listing={listing_type} ID {listing_id}")
-
     return Response({
         "message": "✅ Property saved to your bookings.",
         "booking_id": booking.id,
         "status": booking.status,
         "created_at": booking.created_at
     }, status=status.HTTP_201_CREATED)
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -473,9 +428,7 @@ def get_bookings(request):
     """
     logger.info("📚 GET_BOOKINGS CALLED")
     logger.info(f"User: {request.user.email}")
-
     bookings = Booking.objects.filter(user=request.user).order_by('-created_at')
-
     # Prepare response data, potentially fetching related listing details
     booking_data = []
     for booking in bookings:
@@ -502,9 +455,7 @@ def get_bookings(request):
                 "payment_status": booking.lease_payment.status,
             })
         booking_data.append(item_data)
-
     return Response(booking_data, status=status.HTTP_200_OK)
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -515,7 +466,6 @@ def confirm_booking(request, booking_id):
     """
     logger.info(f"✅ CONFIRM_BOOKING CALLED for Booking ID: {booking_id}")
     logger.info(f"User: {request.user.email}")
-
     try:
         booking = Booking.objects.get(id=booking_id, user=request.user) # Ensure user owns the booking
     except Booking.DoesNotExist:
@@ -524,7 +474,6 @@ def confirm_booking(request, booking_id):
             {"error": "Booking not found or you don't have permission to access it."},
             status=status.HTTP_404_NOT_FOUND
         )
-
     # Check if the booking can be confirmed (must be paid but not yet confirmed/cancelled)
     if booking.status != 'paid_pending_confirmation':
         logger.error(f"❌ Booking ID {booking_id} cannot be confirmed. Current status: {booking.status}")
@@ -532,7 +481,6 @@ def confirm_booking(request, booking_id):
             {"error": f"Cannot confirm booking with status '{booking.status}'. It must be 'paid_pending_confirmation'."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Check if still in confirmation window
     if not booking.is_in_confirmation_window:
         logger.error(f"❌ Booking ID {booking_id} confirmation window has expired")
@@ -540,7 +488,6 @@ def confirm_booking(request, booking_id):
             {"error": "Confirmation window has expired."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Perform the confirmation logic
     booking.status = 'confirmed'
     booking.save()
@@ -560,11 +507,9 @@ def confirm_booking(request, booking_id):
                     "status": booking.status,
                     "warning": "Funds cannot be released yet: Missing landlord bank details."
                 }, status=status.HTTP_200_OK)
-
             # Get the correct bank code using the mapping
             bank_name_from_db = landlord_details['bank_name'].lower().strip()
             bank_code = settings.BANK_CODE_MAPPING.get(bank_name_from_db)
-
             if not bank_code:
                 logger.error(f"Cannot release funds for booking {booking.id}: Bank code not configured for '{landlord_details['bank_name']}'")
                 return Response({
@@ -573,13 +518,10 @@ def confirm_booking(request, booking_id):
                     "status": booking.status,
                     "warning": f"Funds cannot be released yet: Bank code not configured for '{landlord_details['bank_name']}'"
                 }, status=status.HTTP_200_OK)
-
             # Get your Squad merchant ID (from your dashboard)
             merchant_id = "SBQWA77KWD"  # Replace with your actual merchant ID from Squad dashboard
-
             # Create unique transaction reference with merchant ID
             transaction_ref = f"{merchant_id}_{booking.id}_{uuid.uuid4().hex[:8].upper()}"
-
             # Prepare disbursement data for Squad
             disbursement_data = {
                 "transaction_reference": transaction_ref,
@@ -590,15 +532,12 @@ def confirm_booking(request, booking_id):
                 "currency_id": "NGN",
                 "remark": f"Payment for booking {booking.id} at {landlord_details['property_title']}"
             }
-
             headers = {
                 "Authorization": f"Bearer {settings.SQUAD_SECRET_KEY}",
                 "Content-Type": "application/json"
             }
-            
             # Use the correct sandbox transfer endpoint
             squad_disburse_url = f"{settings.SQUAD_BASE_URL.strip()}/payout/transfer"
-
             response = requests.post(squad_disburse_url, json=disbursement_data, headers=headers, timeout=30)
             squad_response = response.json()
 
@@ -624,7 +563,6 @@ def confirm_booking(request, booking_id):
                     "status": booking.status,
                     "error": f"Funds release failed: {error_message}"
                 }, status=status.HTTP_200_OK) # Or a different status if you want to signal partial success
-
         except requests.exceptions.RequestException as e:
             logger.exception(f"💥 Error calling Squad API for fund release for booking {booking.id}")
             return Response({
@@ -660,7 +598,6 @@ def cancel_booking(request, booking_id):
     """
     logger.info(f"❌ CANCEL_BOOKING CALLED for Booking ID: {booking_id}")
     logger.info(f"User: {request.user.email}")
-
     try:
         booking = Booking.objects.get(id=booking_id, user=request.user) # Ensure user owns the booking
     except Booking.DoesNotExist:
@@ -669,7 +606,6 @@ def cancel_booking(request, booking_id):
             {"error": "Booking not found or you don't have permission to access it."},
             status=status.HTTP_404_NOT_FOUND
         )
-
     # Check if the booking can be cancelled
     if booking.status in ['confirmed', 'cancelled', 'refunded', 'released']:
         logger.error(f"❌ Booking ID {booking_id} cannot be cancelled. Current status: {booking.status}")
@@ -677,7 +613,6 @@ def cancel_booking(request, booking_id):
             {"error": f"Cannot cancel booking with status '{booking.status}'."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Check if still in cancellation window
     if not booking.is_in_cancellation_window:
         logger.error(f"❌ Booking ID {booking_id} cancellation window has expired")
@@ -685,24 +620,20 @@ def cancel_booking(request, booking_id):
             {"error": "Cancellation window has expired."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Perform the cancellation logic
     booking.status = 'cancelled'
     booking.refund_status = 'requested'
     booking.refund_processed_at = timezone.now()
     booking.save()
     logger.info(f"✅ Booking ID {booking_id} cancelled for user {request.user.email}")
-
     # TODO: Trigger refund logic here
     # trigger_refund(booking)
-
     return Response({
         "message": "🚫 Your booking has been cancelled successfully. Refund requested.",
         "booking_id": booking.id,
         "status": booking.status,
         "refund_status": booking.refund_status
     }, status=status.HTTP_200_OK)
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -713,7 +644,6 @@ def request_refund(request, booking_id):
     """
     logger.info(f"💰 REQUEST_REFUND CALLED for Booking ID: {booking_id}")
     logger.info(f"User: {request.user.email}")
-
     try:
         booking = Booking.objects.get(id=booking_id, user=request.user)
     except Booking.DoesNotExist:
@@ -722,7 +652,6 @@ def request_refund(request, booking_id):
             {"error": "Booking not found or you don't have permission to access it."},
             status=status.HTTP_404_NOT_FOUND
         )
-
     # Check if eligible for refund
     if booking.status not in ['paid_pending_confirmation']:
         logger.error(f"❌ Booking ID {booking_id} not eligible for refund. Current status: {booking.status}")
@@ -730,7 +659,6 @@ def request_refund(request, booking_id):
             {"error": f"Cannot refund booking with status '{booking.status}'."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Check if still in cancellation window
     if not booking.is_in_cancellation_window:
         logger.error(f"❌ Booking ID {booking_id} refund window has expired")
@@ -738,17 +666,14 @@ def request_refund(request, booking_id):
             {"error": "Refund window has expired."},
             status=status.HTTP_400_BAD_REQUEST
         )
-
     # Process refund request
     booking.status = 'cancelled'
     booking.refund_status = 'requested'
     booking.refund_processed_at = timezone.now()
     booking.save()
     logger.info(f"💰 Refund requested for booking ID {booking_id}")
-
     # TODO: Trigger actual refund process
     # trigger_refund(booking)
-
     return Response({
         "message": "💰 Refund requested successfully.",
         "booking_id": booking.id,
@@ -756,18 +681,17 @@ def request_refund(request, booking_id):
         "refund_status": booking.refund_status
     }, status=status.HTTP_200_OK)
 
-
 # ✅ NEW: Fund Release View
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def release_funds(request, booking_id):
     """
     Release funds to the landlord/owner's account.
-    This should be called manually by the landlord/owner or an admin after confirmation.
+    This can now be called by the tenant who paid, the landlord/owner, or an admin after confirmation.
     """
     booking = get_object_or_404(Booking, id=booking_id)
 
-    # ✅ UPDATED: Check if user is the landlord/owner of the listing associated with the booking
+    # ✅ UPDATED: Check if user is the tenant who paid, the landlord/owner of the listing, or a superuser
     # This assumes the booking's listing_id corresponds to a published listing (Property, AgentProperty, HotelListing)
     # and that we can get the owner from the published listing.
     listing_obj = booking.get_related_published_listing()
@@ -802,9 +726,15 @@ def release_funds(request, booking_id):
         except HotelListing.DoesNotExist:
             pass
 
-    if not owner_user or request.user != owner_user:
-        logger.error(f"❌ User {request.user.id} not authorized to release funds for booking {booking.id}. Owner is {getattr(owner_user, 'id', 'None')}.")
+    # Check authorization: Tenant who paid, Landlord/Owner, or Superuser
+    if not (
+        request.user == booking.user or  # Is the requesting user the tenant who booked and paid?
+        (owner_user and request.user == owner_user) or  # Or is the requesting user the landlord/owner?
+        request.user.is_superuser  # Or is the requesting user a superuser?
+    ):
+        logger.error(f"❌ User {request.user.id} not authorized to release funds for booking {booking.id}. Tenant is {booking.user.id}, Owner is {getattr(owner_user, 'id', 'None')}.")
         return Response({"error": "Not authorized to release funds for this booking."}, status=status.HTTP_403_FORBIDDEN)
+
 
     # Check if release is possible
     if not booking.can_release_funds():
@@ -826,7 +756,6 @@ def release_funds(request, booking_id):
     # Get the correct bank code using the mapping
     bank_name_from_db = landlord_details['bank_name'].lower().strip()
     bank_code = settings.BANK_CODE_MAPPING.get(bank_name_from_db)
-
     if not bank_code:
         return Response({
             "error": f"Bank code not configured for '{landlord_details['bank_name']}'. Cannot release funds."
@@ -855,10 +784,8 @@ def release_funds(request, booking_id):
             "Authorization": f"Bearer {settings.SQUAD_SECRET_KEY}",
             "Content-Type": "application/json"
         }
-        
         # Use the correct sandbox transfer endpoint
         squad_disburse_url = f"{settings.SQUAD_BASE_URL.strip()}/payout/transfer"
-
         response = requests.post(squad_disburse_url, json=disbursement_data, headers=headers, timeout=30)
         squad_response = response.json()
 
@@ -866,12 +793,10 @@ def release_funds(request, booking_id):
             # Squad disbursement successful
             # Update your Booking record to reflect the release
             booking.mark_funds_released(payout_reference=squad_response.get('data', {}).get('transaction_reference')) # Use the reference from Squad if available
-
             return Response({
                 "message": "Funds released successfully.",
                 "squad_response": squad_response
             }, status=status.HTTP_200_OK)
-
         else:
             # Squad disbursement failed
             error_message = squad_response.get('message', 'Squad disbursement failed.')
@@ -879,7 +804,6 @@ def release_funds(request, booking_id):
                 "error": f"Funds release failed: {error_message}",
                 "squad_response": squad_response
             }, status=status.HTTP_400_BAD_REQUEST)
-
     except requests.exceptions.RequestException as e:
         # Network or connection error with Squad
         return Response({
@@ -891,4 +815,4 @@ def release_funds(request, booking_id):
             "error": f"An unexpected error occurred: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# You can add more views here later if needed, e.g., for retrieving lease payment status, etc.   
+# You can add more views here later if needed, e.g., for retrieving lease payment status, etc.
