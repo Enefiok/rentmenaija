@@ -239,7 +239,7 @@ def initiate_lease_payment(request):
     )
     logger.info(f"✅ LeasePayment created: ID={lease_payment.id}, Ref={transaction_ref}, Amount={amount}")
 
-       # --- NEW: Link to existing Booking if it exists and update status ---
+             # --- NEW: Link to existing Booking if it exists and update status ---
     try:
         # Find the saved booking for this listing and user
         original_booking = Booking.objects.get(
