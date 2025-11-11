@@ -1,0 +1,27 @@
+[33m2e22ab8[m update
+[33m51d4b1b[m Add bank details fields to PropertyAdmin list and detail views
+[33mb035526[m Fix AttributeError in PropertyAdmin for lease_term_preference
+[33m79ba3fd[m going back
+[33m450b808[m update
+[33ma484e9a[m admin update
+[33m3571884[m   transactions/views_backup.py
+[33md84f6ad[m feat: add escrow functionality with bank details and booking system
+[33mc5a0d8e[m modified:   transactions/views.py
+[33mb857fe7[m fix: Link LeasePayment to Booking on initiation and update Booking status on webhook
+[33m4f0a75d[m fix: Update booking status in webhook after lease payment
+[33me7dfbde[m feat: Add Booking API (save, list, confirm, cancel)
+[33m57cdbe4[m Add transactions app for landlord/agent listing payments
+[33mbd2136c[m feat: add HTML success page for payment redirect
+[33me2bb86e[m fix: handle GET ?reference= in squad webhook to mark bookings as paid
+[33m1009821[m fix: use DRF auth in payment view to resolve token authentication
+[33m7c071f3[m feat: enforce auth in payment flow, remove guest fields, use request.user
+[33m930ddd6[m feat: integrate Squad sandbox payment flow with dynamic keys and webhook
+[33m8ca4a12[m fix: correct room.name and clean URLs
+[33mb93009d[m feat: add full logging to payment views
+[33mc94ce94[m fix: reorder API routes to fix payment 401 error
+[33m6fa8085[m fix: clean URLs and improve JSON error handling in payments
+[33mcac2f9e[m fix: add payments app to INSTALLED_APPS
+[33mb31c07c[m feat: register payments API routes under /api/payments/
+[33m001428f[m feat: update email template to include hotel booking in description
+[33m0b365bc[m fix: use render() in verify_email to show verification_success.html
+[33mf0ac55f[m Initial commit: RentMeNaija backend with email verification pages

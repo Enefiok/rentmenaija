@@ -31,6 +31,10 @@ class PropertyDraftAdmin(admin.ModelAdmin):
         'address'
     )
     readonly_fields = ('created_at', 'updated_at')
+
+    # Add the new actions for bank verification
+    actions = ['verify_bank_selected', 'unverify_bank_selected']
+
     fieldsets = (
         ("Basic Information", {
             "fields": ("title", "user", "monthly_rent", "currency", "lease_term_preference")
@@ -60,7 +64,7 @@ class PropertyDraftAdmin(admin.ModelAdmin):
                 "owner_bank_name",
                 "owner_account_number",
                 "owner_account_name",
-                "bank_verified",
+                "bank_verified", # This field is now editable in the form view for drafts
             ),
         }),
         ("Metadata", {
@@ -68,6 +72,16 @@ class PropertyDraftAdmin(admin.ModelAdmin):
             "classes": ("collapse",)
         }),
     )
+
+    def verify_bank_selected(self, request, queryset):
+        updated = queryset.update(bank_verified=True)
+        self.message_user(request, f"✅ Bank verification set to True for {updated} draft(s).")
+    verify_bank_selected.short_description = "✅ Verify Bank for selected drafts"
+
+    def unverify_bank_selected(self, request, queryset):
+        updated = queryset.update(bank_verified=False)
+        self.message_user(request, f"❌ Bank verification set to False for {updated} draft(s).")
+    unverify_bank_selected.short_description = "❌ Unverify Bank for selected drafts"
 
 
 # === ADMIN FOR FINAL LISTINGS (REVIEW & APPROVAL) ===
@@ -279,7 +293,7 @@ class PropertyAdmin(admin.ModelAdmin):
     date_hierarchy = 'draft__created_at'
 
 
-    # === DETAIL VIEW FIELDSETS (updated to include bank details) ===
+    # === DETAIL VIEW FIELDSETS ===
     fieldsets = (
         ("📋 Listing Overview", {
             "fields": ("property_title", "owner_name", "submitted_at"),
@@ -312,7 +326,7 @@ class PropertyAdmin(admin.ModelAdmin):
                 "owner_bank_name_detail",
                 "owner_account_number_detail",
                 "owner_account_name_detail",
-                "bank_verified_detail",
+                "bank_verified_detail", # This is now editable if removed from readonly_fields
             ),
             "classes": ("wide",),
         }),
@@ -348,8 +362,15 @@ class PropertyAdmin(admin.ModelAdmin):
         'owner_bank_name_detail',
         'owner_account_number_detail',
         'owner_account_name_detail',
-        'bank_verified_detail',
+        # 'bank_verified_detail', # Uncomment this line if you want the field editable in the form view for Properties
+        # If you make it editable in the form, remove 'bank_verified_detail' from this readonly_fields tuple.
+        # However, the admin actions are often preferred for bulk changes.
+        'bank_verified_detail', # Kept as readonly to use admin actions for toggling
     )
+
+    # Add the new actions to the existing actions
+    # This line replaces the old 'actions = ...' line
+    actions = ['approve_selected_listings', 'reject_selected_listings', 'verify_bank_selected_properties', 'unverify_bank_selected_properties']
 
     def full_address(self, obj):
         return obj.draft.address or "-"
@@ -434,11 +455,12 @@ class PropertyAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         if obj:
+            # Add 'status' to readonly fields only when editing an existing object
             return self.readonly_fields + ('status',)
+        # Return readonly fields as defined when adding a new object (though adding is disabled)
         return self.readonly_fields
 
-    actions = ['approve_selected_listings', 'reject_selected_listings']
-
+    # Existing actions
     def approve_selected_listings(self, request, queryset):
         updated = 0
         for prop in queryset:
@@ -458,3 +480,24 @@ class PropertyAdmin(admin.ModelAdmin):
         self.message_user(request, f"❌ Rejected {updated} listing(s).")
 
     reject_selected_listings.short_description = "❌ Reject selected listings"
+
+    # NEW: Bank verification actions for PropertyAdmin
+    def verify_bank_selected_properties(self, request, queryset):
+        updated = 0
+        for prop in queryset:
+            # Update the Property instance itself
+            prop.bank_verified = True
+            prop.save(update_fields=['bank_verified'])
+            updated += 1
+        self.message_user(request, f"✅ Bank verification set to True for {updated} approved property/ies.")
+    verify_bank_selected_properties.short_description = "✅ Verify Bank for selected properties"
+
+    def unverify_bank_selected_properties(self, request, queryset):
+        updated = 0
+        for prop in queryset:
+            # Update the Property instance itself
+            prop.bank_verified = False
+            prop.save(update_fields=['bank_verified'])
+            updated += 1
+        self.message_user(request, f"❌ Bank verification set to False for {updated} approved property/ies.")
+    unverify_bank_selected_properties.short_description = "❌ Unverify Bank for selected properties"

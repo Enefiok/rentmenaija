@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Release Funds</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input, button { padding: 8px; font-size: 14px; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        #response { margin-top: 20px; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+
+    <h1>Test Release Funds API</h1>
+    <form id="releaseForm">
+        <div class="form-group">
+            <label for="bookingId">Booking ID:</label>
+            <input type="number" id="bookingId" name="bookingId" required>
+        </div>
+        <button type="submit">Release Funds</button>
+    </form>
+
+    <div id="response"></div>
+
+    <script>
+        // Replace 'YOUR_ACTUAL_API_TOKEN_HERE' with your real token
+        const API_TOKEN = '93bf8e1ca886e955adf7730f187a18c781334e3b';
+        const API_BASE_URL = 'https://rentmenaija-a4ed.onrender.com/api'; // Your Render URL
+
+        document.getElementById('releaseForm').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Prevent the default form submission
+
+            const bookingId = document.getElementById('bookingId').value;
+            const responseDiv = document.getElementById('response');
+            responseDiv.className = ''; // Clear previous classes
+            responseDiv.textContent = ''; // Clear previous messages
+
+            if (!bookingId) {
+                responseDiv.className = 'error';
+                responseDiv.textContent = 'Please enter a Booking ID.';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/transactions/${bookingId}/release-funds/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${API_TOKEN}`, // Include the token in the header
+                        'Content-Type': 'application/json',
+                        // Note: We are NOT sending a CSRF token here.
+                        // The Django view should have @csrf_exempt to allow this.
+                    },
+                    // Optionally, you can send an empty body or specific data if required by the backend logic
+                    // body: JSON.stringify({}) // Example of sending an empty JSON body
+                });
+
+                const data = await response.json();
+                console.log('Full Response:', response); // Log the full response object for debugging
+                console.log('Response Data:', data);
+
+                if (response.ok) {
+                    responseDiv.className = 'success';
+                    responseDiv.innerHTML = `<strong>Success!</strong><br>Message: ${data.message || 'Funds released successfully.'}<br>Details: <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    responseDiv.className = 'error';
+                    responseDiv.innerHTML = `<strong>Error ${response.status}!</strong><br>Message: ${data.error || data.detail || 'An error occurred.'}<br>Details: <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                }
+            } catch (error) {
+                console.error('Fetch Error:', error);
+                responseDiv.className = 'error';
+                responseDiv.textContent = `Network Error: ${error.message}`;
+            }
+        });
+    </script>
+
+</body>
+</html>
