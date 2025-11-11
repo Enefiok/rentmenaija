@@ -847,7 +847,7 @@ def release_funds(request, booking_id):
         "account_number": landlord_details['account_number'],
         "account_name": landlord_details['account_name'],  # This should match the name from account lookup
         "currency_id": "NGN",
-        "remark": f"Payment for booking {booking.id} at {landlord_details['property_title']}"
+        "remark": f"Payment for booking {booking.id} at {booking.property_title}"
     }
 
     # Make the API call to Squad
