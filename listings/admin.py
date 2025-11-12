@@ -10,6 +10,7 @@ from .models import PropertyDraft, Property
 @admin.register(PropertyDraft)
 class PropertyDraftAdmin(admin.ModelAdmin):
     list_display = (
+        'id',
         'title',
         'user',
         'phone_number',
