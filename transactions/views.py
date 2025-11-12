@@ -41,9 +41,10 @@ def get_landlord_or_agent_user(listing_type, listing_id):
         raise ValueError("Invalid listing type")
 
 
+# Apply @csrf_exempt to POST/PUT/DELETE views that use token auth
 @api_view(['POST'])
 @permission_classes([IsAuthenticated]) # Require login for lease payments
-@csrf_exempt
+@csrf_exempt # Exempt from CSRF for token-authenticated API
 def initiate_lease_payment(request):
     """
     Initiate a payment for a landlord or agent listing (e.g., security deposit, first month rent, full lease amount).
@@ -86,98 +87,82 @@ def initiate_lease_payment(request):
          )
 
     # Get the listing object to validate it exists and get details (like rent for calculation)
+    # Prioritize published listings (Property, AgentProperty, HotelListing)
+    listing_obj = None
     try:
         if listing_type == 'landlord_listing':
-            listing_obj = PropertyDraft.objects.get(id=listing_id) # Query PropertyDraft
-            # Example: Calculate amount based on payment type and listing rent
-            if payment_type == 'security_deposit':
-                 # Example: Deposit is 1 month's rent, adjust logic as needed
-                 amount = float(listing_obj.monthly_rent) # Ensure it's a float for Squad
-            elif payment_type == 'first_month_rent':
-                 amount = float(listing_obj.monthly_rent)
-            elif payment_type == 'booking_fee':
-                 # Example: Fixed booking fee, get from settings or listing detail if variable
-                 amount = 10000.00 # Example fixed amount
-            # --- NEW: Calculate full lease amount ---
-            elif payment_type == 'full_lease_payment':
-                lease_term = listing_obj.lease_term_preference # e.g., '1_year', '2_years', 'monthly', '6_months'
-                monthly_rent = float(listing_obj.monthly_rent)
-
-                # Define a mapping for lease terms to number of months
-                lease_term_to_months = {
-                    'monthly': 1,
-                    '6_months': 6,
-                    '1_year': 12,
-                    '2_years': 24,
-                    # Add more if needed
-                }
-
-                # Calculate the number of months based on the lease term
-                num_months = lease_term_to_months.get(lease_term)
-
-                if num_months is None:
-                    logger.error(f"❌ Unsupported lease_term_preference for full payment: {lease_term}")
-                    return Response(
-                        {"error": f"Full lease payment calculation not supported for lease term: {lease_term}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                # Calculate the total amount for the full lease term
-                amount = monthly_rent * num_months
-                logger.info(f"Calculated full lease amount: {amount} for {num_months} months (term: {lease_term})")
-            # --- END NEW ---
-            else:
-                 # Handle other types or require amount from frontend if not derivable
-                 logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
-                 return Response(
-                     {"error": f"Amount calculation not supported for {payment_type}"},
-                     status=status.HTTP_400_BAD_REQUEST
-                 )
-
+            # First, try to find the published Property
+            try:
+                listing_obj = Property.objects.get(id=listing_id)
+                # If found, use the draft details for rent, term, etc.
+                listing_obj_for_calculation = listing_obj.draft
+            except Property.DoesNotExist:
+                # If not found, fall back to the draft
+                listing_obj_for_calculation = PropertyDraft.objects.get(id=listing_id)
+                listing_obj = listing_obj_for_calculation # Assign draft as listing_obj if published not found
         elif listing_type == 'agent_listing':
-            listing_obj = AgentPropertyDraft.objects.get(id=listing_id) # Query AgentPropertyDraft
-            # Similar logic for agent listing
-            if payment_type == 'security_deposit':
-                 amount = float(listing_obj.monthly_rent)
-            elif payment_type == 'first_month_rent':
-                 amount = float(listing_obj.monthly_rent)
-            elif payment_type == 'booking_fee':
-                 amount = 10000.00 # Example
-            # --- NEW: Calculate full lease amount for agent listing ---
-            elif payment_type == 'full_lease_payment':
-                lease_term = listing_obj.lease_term_preference
-                monthly_rent = float(listing_obj.monthly_rent)
-
-                lease_term_to_months = {
-                    'monthly': 1,
-                    '6_months': 6,
-                    '1_year': 12,
-                    '2_years': 24,
-                    # Add more if needed
-                }
-
-                num_months = lease_term_to_months.get(lease_term)
-
-                if num_months is None:
-                    logger.error(f"❌ Unsupported lease_term_preference for agent listing full payment: {lease_term}")
-                    return Response(
-                        {"error": f"Full lease payment calculation not supported for agent listing term: {lease_term}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                amount = monthly_rent * num_months
-                logger.info(f"Calculated full lease amount for agent: {amount} for {num_months} months (term: {lease_term})")
-            # --- END NEW ---
-            else:
-                 logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
-                 return Response(
-                     {"error": f"Amount calculation not supported for {payment_type}"},
-                     status=status.HTTP_400_BAD_REQUEST
-                 )
+            # First, try to find the published AgentProperty
+            try:
+                listing_obj = AgentProperty.objects.get(id=listing_id)
+                # If found, use the draft details for rent, term, etc.
+                listing_obj_for_calculation = listing_obj.draft
+            except AgentProperty.DoesNotExist:
+                # If not found, fall back to the draft
+                listing_obj_for_calculation = AgentPropertyDraft.objects.get(id=listing_id)
+                listing_obj = listing_obj_for_calculation # Assign draft as listing_obj if published not found
         elif listing_type == 'hotel_listing':
+            # For hotels, assume HotelListing is the published version
             from hotels.models import HotelListing
             listing_obj = HotelListing.objects.get(id=listing_id)
-            # Calculate amount for hotel stay (nightly rate * number of nights)
+            listing_obj_for_calculation = listing_obj # For hotels, the object itself is used for calculation
+
+        # Example: Calculate amount based on payment type and listing rent
+        if payment_type == 'security_deposit':
+             # Example: Deposit is 1 month's rent, adjust logic as needed
+             amount = float(listing_obj_for_calculation.monthly_rent) # Ensure it's a float for Squad
+        elif payment_type == 'first_month_rent':
+             amount = float(listing_obj_for_calculation.monthly_rent)
+        elif payment_type == 'booking_fee':
+             # Example: Fixed booking fee, get from settings or listing detail if variable
+             amount = 10000.00 # Example fixed amount
+        # --- NEW: Calculate full lease amount ---
+        elif payment_type == 'full_lease_payment':
+            lease_term = listing_obj_for_calculation.lease_term_preference # e.g., '1_year', '2_years', 'monthly', '6_months'
+            monthly_rent = float(listing_obj_for_calculation.monthly_rent)
+
+            # Define a mapping for lease terms to number of months
+            lease_term_to_months = {
+                'monthly': 1,
+                '6_months': 6,
+                '1_year': 12,
+                '2_years': 24,
+                # Add more if needed
+            }
+
+            # Calculate the number of months based on the lease term
+            num_months = lease_term_to_months.get(lease_term)
+
+            if num_months is None:
+                logger.error(f"❌ Unsupported lease_term_preference for full payment: {lease_term}")
+                return Response(
+                    {"error": f"Full lease payment calculation not supported for lease term: {lease_term}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Calculate the total amount for the full lease term
+            amount = monthly_rent * num_months
+            logger.info(f"Calculated full lease amount: {amount} for {num_months} months (term: {lease_term})")
+        # --- END NEW ---
+        else:
+             # Handle other types or require amount from frontend if not derivable
+             logger.error(f"❌ Amount calculation not defined for payment_type: {payment_type}")
+             return Response(
+                 {"error": f"Amount calculation not supported for {payment_type}"},
+                 status=status.HTTP_400_BAD_REQUEST
+             )
+
+        # Calculate amount for hotel stay (nightly rate * number of nights) - This part remains the same
+        if listing_type == 'hotel_listing':
             check_in = data.get('check_in_date')
             check_out = data.get('check_out_date')
             
@@ -192,9 +177,9 @@ def initiate_lease_payment(request):
             check_in_date = datetime.strptime(check_in, '%Y-%m-%d').date()
             check_out_date = datetime.strptime(check_out, '%Y-%m-%d').date()
             nights = (check_out_date - check_in_date).days
-            amount = float(listing_obj.price_per_night) * nights
+            amount = float(listing_obj.price_per_night) * nights # Use the found HotelListing object
 
-    except (PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist, HotelListing.DoesNotExist): # Catch specific DoesNotExist
+    except (Property.DoesNotExist, AgentProperty.DoesNotExist, HotelListing.DoesNotExist, PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist): # Catch specific DoesNotExist
         logger.error(f"❌ {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
         return Response(
             {"error": f"{listing_type.replace('_', ' ').title()} not found."},
@@ -202,12 +187,18 @@ def initiate_lease_payment(request):
         )
 
     # Determine the landlord/agent user for the payment record
+    # Use the listing_obj (which could be published or draft) to get the owner
     try:
         if listing_type in ['landlord_listing', 'agent_listing']:
-            landlord_or_agent_user = get_landlord_or_agent_user(listing_type, listing_id)
+            # Use the draft linked to the found listing_obj to get the user
+            if hasattr(listing_obj, 'draft'):
+                 landlord_or_agent_user = listing_obj.draft.user if listing_type == 'landlord_listing' else listing_obj.draft.agent
+            else:
+                 # Fallback if somehow listing_obj is the draft itself
+                 landlord_or_agent_user = get_landlord_or_agent_user(listing_type, listing_id)
         else:  # hotel_listing
             from hotels.models import HotelListing
-            hotel_listing = HotelListing.objects.get(id=listing_id)
+            hotel_listing = HotelListing.objects.get(id=listing_id) # Re-fetch to get owner safely
             # Assuming hotel owner is stored in the hotel listing model
             # Adjust this based on your actual hotel model structure
             landlord_or_agent_user = hotel_listing.owner  # or whatever field stores the owner
@@ -217,7 +208,7 @@ def initiate_lease_payment(request):
             {"error": str(e)},
             status=status.HTTP_400_BAD_REQUEST
         )
-    except (PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist, HotelListing.DoesNotExist): # Should not happen if the listing check above passed, but good practice
+    except (Property.DoesNotExist, AgentProperty.DoesNotExist, HotelListing.DoesNotExist): # Should not happen if the listing check above passed, but good practice
          logger.error(f"❌ Landlord/Agent user lookup failed for {listing_type} ID {listing_id}")
          return Response(
              {"error": f"{listing_type.replace('_', ' ').title()} owner not found."},
@@ -362,7 +353,6 @@ def initiate_lease_payment(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
 
 # --- Updated Booking Views for Escrow System ---
 
