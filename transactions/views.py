@@ -508,6 +508,8 @@ def confirm_booking(request, booking_id):
     """
     Confirm a booking that has been paid for.
     Requires: booking_id in the URL path.
+    The booking must be in 'paid_pending_confirmation' status and within the confirmation window.
+    Upon confirmation, attempts to release funds to the landlord/agent.
     """
     logger.info(f"✅ CONFIRM_BOOKING CALLED for Booking ID: {booking_id}")
     logger.info(f"User: {request.user.email}")
@@ -532,8 +534,10 @@ def confirm_booking(request, booking_id):
     # Check if still in confirmation window
     if not booking.is_in_confirmation_window:
         logger.error(f"❌ Booking ID {booking_id} confirmation window has expired")
+        # Mark as expired/failed if necessary, though status might remain 'paid_pending_confirmation'
+        # until a scheduled task processes it.
         return Response(
-            {"error": "Confirmation window has expired."},
+            {"error": "Confirmation window has expired. Automatic cancellation/refund may apply."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -629,19 +633,24 @@ def confirm_booking(request, booking_id):
                 error_message = squad_response.get('message', 'Squad disbursement failed.')
                 logger.error(f"❌ Squad disbursement failed for booking {booking.id}: {error_message}")
                 # Keep release_status as 'pending' or set to 'failed', depending on your retry logic
+                # The booking is still confirmed, but release failed.
                 message = f"✅ Your booking has been confirmed successfully. Funds release failed: {error_message}"
 
         except requests.exceptions.RequestException as e:
             logger.exception(f"💥 Error calling Squad API for fund release for booking {booking.id}")
+            # The booking is still confirmed, but release failed due to an API error.
             message = f"✅ Your booking has been confirmed successfully. Error releasing funds: {str(e)}"
         except Exception as e:
             logger.exception(f"💥 Unexpected error during fund release for booking {booking.id}")
+            # The booking is still confirmed, but release failed due to an unexpected error.
             message = f"✅ Your booking has been confirmed successfully. An unexpected error occurred releasing funds: {str(e)}"
     else:
         # If conditions for immediate release aren't met upon confirmation
+        # (e.g., no amount paid, or funds were already somehow marked as released before this call)
+        logger.info(f"Funds will not be released now for booking {booking.id} (conditions not met for immediate release).")
         message = "✅ Your booking has been confirmed successfully."
 
-    # Finally, save the booking status update
+    # Finally, save the booking status update (and any changes made during release attempts)
     booking.save()
 
     return Response({
@@ -649,7 +658,8 @@ def confirm_booking(request, booking_id):
         "booking_id": booking.id,
         "status": booking.status,
         "release_status": booking.release_status
-    }, status=status.HTTP_200_OK)
+           }, status=status.HTTP_200_OK)
+    
 
 
 @api_view(['POST'])
@@ -711,8 +721,10 @@ def cancel_booking(request, booking_id):
 @csrf_exempt
 def request_refund(request, booking_id):
     """
-    Request a refund for a paid booking (within cancellation window).
-    Alternative endpoint to cancel_booking that explicitly handles refund.
+    Request a refund for a paid booking (e.g., 'paid_pending_confirmation' status).
+    This could be used before confirmation window expires (if within cancellation window),
+    or potentially after confirmation window expires if the automatic expiration
+    hasn't been processed yet by the scheduled task, but before the landlord manually releases funds.
     """
     logger.info(f"💰 REQUEST_REFUND CALLED for Booking ID: {booking_id}")
     logger.info(f"User: {request.user.email}")
@@ -727,29 +739,64 @@ def request_refund(request, booking_id):
         )
 
     # Check if eligible for refund
+    # Refunds are primarily for 'paid_pending_confirmation' status.
+    # Consider if 'confirmed' bookings (where release failed) might also be eligible,
+    # depending on your policy. For now, restrict to 'paid_pending_confirmation'.
     if booking.status not in ['paid_pending_confirmation']:
-        logger.error(f"❌ Booking ID {booking_id} not eligible for refund. Current status: {booking.status}")
+        logger.error(f"❌ Booking ID {booking_id} not eligible for manual refund. Current status: {booking.status}")
         return Response(
-            {"error": f"Cannot refund booking with status '{booking.status}'."},
+            {"error": f"Cannot request manual refund for booking with status '{booking.status}'."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Check if still in cancellation window
+    # Check if still in cancellation window (or perhaps confirmation window for 'paid_pending_confirmation'?)
+    # If the idea is the user can *always* request a refund before confirmation (even if cancellation window passed),
+    # or if the request happens *after* the automatic expiration but *before* the scheduled task runs,
+    # this check might need adjustment or removal for 'paid_pending_confirmation'.
+    # For now, keeping the cancellation window check for consistency unless a specific rule for 'paid_pending_confirmation' refunds is defined differently.
+    # If the automatic expiration sets a specific refund status, that might be a better check.
+    # Let's assume manual refund requests for 'paid_pending_confirmation' follow the cancellation window rule for now.
     if not booking.is_in_cancellation_window:
-        logger.error(f"❌ Booking ID {booking_id} refund window has expired")
+        logger.error(f"❌ Booking ID {booking_id} manual refund window has expired (based on cancellation window)")
+        # Alternatively, if a booking is 'paid_pending_confirmation' but past its *confirmation* window,
+        # the user might expect a manual refund request to still work, assuming the automatic system hasn't run yet.
+        # You might need a specific check here if the confirmation window has passed but automatic cancellation hasn't occurred yet.
+        # For example:
+        # if booking.status == 'paid_pending_confirmation' and not booking.is_in_confirmation_window:
+        #     # Allow refund request here if automatic cancellation hasn't happened yet
+        #     pass # Or implement specific logic
+        # else:
+        #     return Response({"error": "Refund window has expired."}, status=status.HTTP_400_BAD_REQUEST)
+        # For now, using the simpler cancellation window check.
         return Response(
             {"error": "Refund window has expired."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # Check again if the confirmation window is still valid at the moment of this request,
+    # because time might have passed since the initial checks or the request was made late.
+    # This is crucial: if the window expired *after* the cancellation check but before this point,
+    # the automatic process should handle it, not a manual request now.
+    if booking.status == 'paid_pending_confirmation' and not booking.is_in_confirmation_window:
+         logger.error(f"❌ Booking ID {booking_id} cannot have manual refund requested now: Confirmation window expired, automatic process should handle it.")
+         return Response(
+            {"error": "Confirmation window has expired. Automatic cancellation/refund process should handle this shortly."},
+            status=status.HTTP_400_BAD_REQUEST
+         )
+
     # Process refund request
-    booking.status = 'cancelled'
+    # It's safer to set a status like 'refund_requested_pending_confirmation_expiry'
+    # if the booking is still 'paid_pending_confirmation' and within the cancellation/confirmation window,
+    # and let the scheduled task handle the actual Squad refund call and final status update.
+    # However, if you want to process it immediately here (assuming it's allowed):
+    # Assuming the booking is still in 'paid_pending_confirmation' and within the applicable window
+    booking.status = 'cancelled' # Or a new status like 'refund_requested_manual' if you want to distinguish
     booking.refund_status = 'requested'
     booking.refund_processed_at = timezone.now()
     booking.save()
-    logger.info(f"💰 Refund requested for booking ID {booking_id}")
+    logger.info(f"💰 Manual refund requested for booking ID {booking_id}")
 
-    # TODO: Trigger actual refund process
+    # TODO: Trigger actual refund process (e.g., call Squad refund API)
     # trigger_refund(booking)
 
     return Response({
