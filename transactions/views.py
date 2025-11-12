@@ -43,6 +43,7 @@ def get_landlord_or_agent_user(listing_type, listing_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated]) # Require login for lease payments
+@csrf_exempt
 def initiate_lease_payment(request):
     """
     Initiate a payment for a landlord or agent listing (e.g., security deposit, first month rent, full lease amount).
@@ -365,7 +366,10 @@ def initiate_lease_payment(request):
 
 # --- Updated Booking Views for Escrow System ---
 
+
+# Apply @csrf_exempt to POST/PUT/DELETE views that use token auth
 @api_view(['POST'])
+@csrf_exempt # Exempt from CSRF for token-authenticated API
 @permission_classes([IsAuthenticated])
 def save_booking(request):
     """
@@ -467,6 +471,7 @@ def save_booking(request):
 
 
 @api_view(['GET'])
+@csrf_exempt
 @permission_classes([IsAuthenticated])
 def get_bookings(request):
     """
@@ -509,6 +514,7 @@ def get_bookings(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@csrf_exempt
 def confirm_booking(request, booking_id):
     """
     Confirm a booking that has been paid for.
@@ -654,6 +660,7 @@ def confirm_booking(request, booking_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@csrf_exempt
 def cancel_booking(request, booking_id):
     """
     Cancel a booking (saved or paid).
@@ -707,6 +714,7 @@ def cancel_booking(request, booking_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@csrf_exempt
 def request_refund(request, booking_id):
     """
     Request a refund for a paid booking (within cancellation window).
@@ -761,6 +769,7 @@ def request_refund(request, booking_id):
 # ✅ NEW: Fund Release View
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@csrf_exempt
 def release_funds(request, booking_id):
     """
     Release funds to the landlord/owner's account.

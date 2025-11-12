@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking API Test Frontend</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h2 {
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap; /* To preserve line breaks in JSON */
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .hidden {
+            display: none;
+        }
+        .token-display {
+            background-color: #e9ecef;
+            padding: 5px;
+            border-radius: 4px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .booking-item {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        .booking-item:last-child {
+            border-bottom: none;
+        }
+        /* Style for the login section */
+        .login-section {
+            text-align: center;
+        }
+        .login-section input {
+            width: 80%;
+            margin: 0 auto 10px; /* Center and add bottom margin */
+        }
+        .login-section button {
+            width: 80%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Booking API Test Frontend</h1>
+
+    <!-- Token Display Section -->
+    <div class="section">
+        <h2>Token</h2>
+        <div class="token-display">Token: <span id="token_value">Token 93bf8e1ca886e955adf7730f187a18c781334e3b</span></div>
+        <button onclick="copyToken()">Copy Token</button>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main_content">
+        <!-- Load Listings Section -->
+        <div class="section">
+            <h2>Available Listings (Public)</h2>
+            <button onclick="loadListings('landlord')">Load Landlord Listings</button>
+            <button onclick="loadListings('agent')">Load Agent Listings</button>
+            <button onclick="loadListings('hotel')">Load Hotel Listings</button>
+            <div id="listings_result" class="result hidden"></div>
+        </div>
+
+        <!-- Save Booking Section -->
+        <div class="section">
+            <h2>Save a Booking</h2>
+            <div class="form-group">
+                <label for="save_listing_type">Listing Type:</label>
+                <select id="save_listing_type">
+                    <option value="landlord_listing">Landlord Listing</option>
+                    <option value="agent_listing">Agent Listing</option>
+                    <option value="hotel_listing">Hotel Listing</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="save_listing_id">Listing ID:</label>
+                <input type="number" id="save_listing_id" placeholder="e.g., 1">
+            </div>
+            <div id="hotel_dates_save" class="form-group hidden">
+                <label for="save_check_in_date">Check-in Date (for hotels):</label>
+                <input type="date" id="save_check_in_date">
+                <label for="save_check_out_date">Check-out Date (for hotels):</label>
+                <input type="date" id="save_check_out_date">
+            </div>
+            <button onclick="saveBooking()">Save Booking</button>
+            <div id="save_booking_result" class="result hidden"></div>
+        </div>
+
+        <!-- Initiate Payment Section -->
+        <div class="section">
+            <h2>Initiate Lease Payment</h2>
+            <div class="form-group">
+                <label for="payment_listing_type">Listing Type:</label>
+                <select id="payment_listing_type">
+                    <option value="landlord_listing">Landlord Listing</option>
+                    <option value="agent_listing">Agent Listing</option>
+                    <option value="hotel_listing">Hotel Listing</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="payment_listing_id">Listing ID:</label>
+                <input type="number" id="payment_listing_id" placeholder="e.g., 1">
+            </div>
+            <div class="form-group">
+                <label for="payment_type">Payment Type:</label>
+                <select id="payment_type">
+                    <option value="security_deposit">Security Deposit</option>
+                    <option value="first_month_rent">First Month Rent</option>
+                    <option value="last_month_rent">Last Month Rent</option>
+                    <option value="booking_fee">Booking Fee</option>
+                    <option value="full_lease_payment">Full Lease Payment</option>
+                </select>
+            </div>
+             <div id="hotel_dates_payment" class="form-group hidden">
+                <label for="payment_check_in_date">Check-in Date (for hotels):</label>
+                <input type="date" id="payment_check_in_date">
+                <label for="payment_check_out_date">Check-out Date (for hotels):</label>
+                <input type="date" id="payment_check_out_date">
+            </div>
+            <button onclick="initiateLeasePayment()">Initiate Payment</button>
+            <div id="payment_result" class="result hidden"></div>
+        </div>
+
+        <!-- Get User's Bookings Section -->
+        <div class="section">
+            <h2>Your Bookings</h2>
+            <button onclick="getBookings()">Load My Bookings</button>
+            <div id="bookings_result" class="result hidden"></div>
+        </div>
+
+        <!-- Confirm Booking Section -->
+        <div class="section">
+            <h2>Confirm a Booking</h2>
+            <div class="form-group">
+                <label for="confirm_booking_id">Booking ID:</label>
+                <input type="number" id="confirm_booking_id" placeholder="e.g., 1">
+            </div>
+            <button onclick="confirmBooking()">Confirm Booking</button>
+            <div id="confirm_booking_result" class="result hidden"></div>
+        </div>
+
+        <!-- Cancel Booking Section -->
+        <div class="section">
+            <h2>Cancel a Booking</h2>
+            <div class="form-group">
+                <label for="cancel_booking_id">Booking ID:</label>
+                <input type="number" id="cancel_booking_id" placeholder="e.g., 1">
+            </div>
+            <button onclick="cancelBooking()">Cancel Booking</button>
+            <div id="cancel_booking_result" class="result hidden"></div>
+        </div>
+
+        <!-- Request Refund Section -->
+        <div class="section">
+            <h2>Request Refund</h2>
+            <div class="form-group">
+                <label for="refund_booking_id">Booking ID:</label>
+                <input type="number" id="refund_booking_id" placeholder="e.g., 1">
+            </div>
+            <button onclick="requestRefund()">Request Refund</button>
+            <div id="refund_result" class="result hidden"></div>
+        </div>
+
+        <!-- Release Funds Section (Example) -->
+        <div class="section">
+            <h2>Release Funds (Landlord/Owner Action)</h2>
+            <div class="form-group">
+                <label for="release_booking_id">Booking ID:</label>
+                <input type="number" id="release_booking_id" placeholder="e.g., 1">
+            </div>
+            <button onclick="releaseFunds()">Release Funds</button>
+            <div id="release_result" class="result hidden"></div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    // Store the token in the browser's memory for this session
+    let authToken = 'Token 93bf8e1ca886e955adf7730f187a18c781334e3b'; // Your token here
+
+    // --- Helper Functions ---
+
+    function showResult(elementId, message, isError = false) {
+        const element = document.getElementById(elementId);
+        element.textContent = message;
+        element.className = `result ${isError ? 'error' : 'success'}`;
+        element.classList.remove('hidden');
+    }
+
+    function hideResult(elementId) {
+        const element = document.getElementById(elementId);
+        element.classList.add('hidden');
+    }
+
+    function getHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': authToken // Use the token stored in JS memory
+        };
+    }
+
+    function handleListingTypeChange() {
+        const type = document.getElementById('save_listing_type').value;
+        const hotelDatesDiv = document.getElementById('hotel_dates_save');
+        if (type === 'hotel_listing') {
+            hotelDatesDiv.classList.remove('hidden');
+        } else {
+            hotelDatesDiv.classList.add('hidden');
+        }
+    }
+
+    function handlePaymentListingTypeChange() {
+        const type = document.getElementById('payment_listing_type').value;
+        const hotelDatesDiv = document.getElementById('hotel_dates_payment');
+        if (type === 'hotel_listing') {
+            hotelDatesDiv.classList.remove('hidden');
+        } else {
+            hotelDatesDiv.classList.add('hidden');
+        }
+    }
+
+    // --- Event Listeners for Dropdowns ---
+    document.getElementById('save_listing_type').addEventListener('change', handleListingTypeChange);
+    document.getElementById('payment_listing_type').addEventListener('change', handlePaymentListingTypeChange);
+
+    function copyToken() {
+        const tokenElement = document.getElementById('token_value');
+        navigator.clipboard.writeText(tokenElement.textContent).then(() => {
+            alert('Token copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy token: ', err);
+            // Fallback for older browsers if needed
+            const textArea = document.createElement('textarea');
+            textArea.value = tokenElement.textContent;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                alert('Token copied to clipboard (fallback)!');
+            } catch (err) {
+                console.error('Fallback copy failed: ', err);
+            }
+            document.body.removeChild(textArea);
+        });
+    }
+
+    // --- API Call Functions ---
+
+    async function loadListings(type) {
+        let url = '';
+        if (type === 'landlord') {
+            url = 'https://rentmenaija-a4ed.onrender.com/api/listings/';
+        } else if (type === 'agent') {
+            url = 'https://rentmenaija-a4ed.onrender.com/api/agent-listings/';
+        } else if (type === 'hotel') {
+            url = 'https://rentmenaija-a4ed.onrender.com/api/hotels/';
+        } else {
+            showResult('listings_result', 'Invalid listing type.', true);
+            return;
+        }
+
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                let html = '<h3>Loaded Listings:</h3>';
+                if (data.length === 0) {
+                    html += '<p>No listings found.</p>';
+                } else {
+                    data.forEach(item => {
+                        html += `<div class="booking-item"><strong>${item.title}</strong> (ID: ${item.id}) - ${item.monthly_rent || item.price_per_night} ${item.currency} - ${item.city}, ${item.state}</div>`;
+                    });
+                }
+                showResult('listings_result', html, false);
+            } else {
+                showResult('listings_result', `Failed to load listings: ${response.status} ${response.statusText}`, true);
+            }
+        } catch (error) {
+            showResult('listings_result', `Error loading listings: ${error.message}`, true);
+        }
+    }
+
+    async function saveBooking() {
+        const listingType = document.getElementById('save_listing_type').value;
+        const listingId = parseInt(document.getElementById('save_listing_id').value);
+        let checkInDate = document.getElementById('save_check_in_date').value;
+        let checkOutDate = document.getElementById('save_check_out_date').value;
+
+        if (!listingType || !listingId) {
+            showResult('save_booking_result', 'Please select listing type and enter listing ID.', true);
+            return;
+        }
+
+        // Validate hotel dates if applicable
+        if (listingType === 'hotel_listing') {
+            if (!checkInDate || !checkOutDate) {
+                showResult('save_booking_result', 'Please enter both check-in and check-out dates for hotels.', true);
+                return;
+            }
+            // Basic date validation (check if check-out is after check-in)
+            if (new Date(checkOutDate) <= new Date(checkInDate)) {
+                showResult('save_booking_result', 'Check-out date must be after check-in date.', true);
+                return;
+            }
+        } else {
+            // Clear dates if not a hotel
+            checkInDate = null;
+            checkOutDate = null;
+        }
+
+        try {
+            const response = await fetch('https://rentmenaija-a4ed.onrender.com/api/transactions/save/', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({
+                    listing_type: listingType,
+                    listing_id: listingId,
+                    check_in_date: checkInDate,
+                    check_out_date: checkOutDate
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showResult('save_booking_result', `Booking saved successfully! ID: ${data.booking_id}`, false);
+                // Clear the form
+                document.getElementById('save_listing_id').value = '';
+                document.getElementById('save_check_in_date').value = '';
+                document.getElementById('save_check_out_date').value = '';
+            } else {
+                showResult('save_booking_result', `Failed to save booking: ${data.error || 'Unknown error'}`, true);
+            }
+        } catch (error) {
+            showResult('save_booking_result', `Error saving booking: ${error.message}`, true);
+        }
+    }
+
+    async function initiateLeasePayment() {
+        const listingType = document.getElementById('payment_listing_type').value;
+        const listingId = parseInt(document.getElementById('payment_listing_id').value);
+        const paymentType = document.getElementById('payment_type').value;
+        let checkInDate = document.getElementById('payment_check_in_date').value;
+        let checkOutDate = document.getElementById('payment_check_out_date').value;
+
+        if (!listingType || !listingId || !paymentType) {
+            showResult('payment_result', 'Please select listing type, listing ID, and payment type.', true);
+            return;
+        }
+
+        // Validate hotel dates if applicable
+        if (listingType === 'hotel_listing') {
+            if (!checkInDate || !checkOutDate) {
+                showResult('payment_result', 'Please enter both check-in and check-out dates for hotels.', true);
+                return;
+            }
+            if (new Date(checkOutDate) <= new Date(checkInDate)) {
+                showResult('payment_result', 'Check-out date must be after check-in date.', true);
+                return;
+            }
+        } else {
+            checkInDate = null;
+            checkOutDate = null;
+        }
+
+        try {
+            const response = await fetch('https://rentmenaija-a4ed.onrender.com/api/transactions/lease-payment/', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({
+                    listing_type: listingType,
+                    listing_id: listingId,
+                    payment_type: paymentType,
+                    check_in_date: checkInDate,
+                    check_out_date: checkOutDate
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Show the checkout URL and lease payment ID
+                showResult('payment_result', `Payment initiated successfully!\nLease Payment ID: ${data.lease_payment_id}\n\nRedirecting to payment page...`, false);
+                // Optional: Automatically redirect after a short delay
+                setTimeout(() => {
+                    window.open(data.checkout_url, '_blank'); // Opens in a new tab
+                }, 2000); // Wait 2 seconds before redirecting
+            } else {
+                showResult('payment_result', `Failed to initiate payment: ${data.error || 'Unknown error'}`, true);
+            }
+        } catch (error) {
+            showResult('payment_result', `Error initiating payment: ${error.message}`, true);
+        }
+    }
+
+    async function getBookings() {
+        try {
+            const response = await fetch('https://rentmenaija-a4ed.onrender.com/api/transactions/', {
+                method: 'GET',
+                headers: getHeaders()
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                let html = '<h3>Your Bookings:</h3>';
+                if (data.length === 0) {
+                    html += '<p>No bookings found.</p>';
+                } else {
+                    data.forEach(booking => {
+                        html += `<div class="booking-item">
+                                    <strong>ID:</strong> ${booking.id} - <strong>Property:</strong> ${booking.property_title} - 
+                                    <strong>Status:</strong> ${booking.status} - <strong>Created:</strong> ${new Date(booking.created_at).toLocaleString()} - 
+                                    <strong>Amount:</strong> ${booking.initial_amount_paid_ngn} - <strong>Payment Status:</strong> ${booking.payment_status || 'N/A'} - 
+                                    <strong>Refund:</strong> ${booking.refund_status} - <strong>Release:</strong> ${booking.release_status} - 
+                                    <strong>Payment Type:</strong> ${booking.payment_type || 'N/A'} - 
+                                    <strong>Dates:</strong> ${booking.check_in_date ? booking.check_in_date + ' to ' + booking.check_out_date : 'N/A'}
+                                  </div>`;
+                    });
+                }
+                showResult('bookings_result', html, false);
+            } else {
+                showResult('bookings_result', `Failed to get bookings: ${response.status} ${response.statusText}`, true);
+            }
+        } catch (error) {
+            showResult('bookings_result', `Error getting bookings: ${error.message}`, true);
+        }
+    }
+
+    async function confirmBooking() {
+        const bookingId = parseInt(document.getElementById('confirm_booking_id').value);
+
+        if (!bookingId) {
+            showResult('confirm_booking_result', 'Please enter a booking ID.', true);
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://rentmenaija-a4ed.onrender.com/api/transactions/${bookingId}/confirm/`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({}) // Empty body for confirm
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showResult('confirm_booking_result', `Booking ${bookingId} confirmed successfully!`, false);
+                // Clear the form
+                document.getElementById('confirm_booking_id').value = '';
+                // Optionally reload bookings
+                // getBookings();
+            } else {
+                showResult('confirm_booking_result', `Failed to confirm booking: ${data.error || 'Unknown error'}`, true);
+            }
+        } catch (error) {
+            showResult('confirm_booking_result', `Error confirming booking: ${error.message}`, true);
+        }
+    }
+
+    async function cancelBooking() {
+        const bookingId = parseInt(document.getElementById('cancel_booking_id').value);
+
+        if (!bookingId) {
+            showResult('cancel_booking_result', 'Please enter a booking ID.', true);
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://rentmenaija-a4ed.onrender.com/api/transactions/${bookingId}/cancel/`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({}) // Empty body for cancel
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showResult('cancel_booking_result', `Booking ${bookingId} cancelled successfully!`, false);
+                // Clear the form
+                document.getElementById('cancel_booking_id').value = '';
+                // Optionally reload bookings
+                // getBookings();
+            } else {
+                showResult('cancel_booking_result', `Failed to cancel booking: ${data.error || 'Unknown error'}`, true);
+            }
+        } catch (error) {
+            showResult('cancel_booking_result', `Error cancelling booking: ${error.message}`, true);
+        }
+    }
+
+    async function requestRefund() {
+        const bookingId = parseInt(document.getElementById('refund_booking_id').value);
+
+        if (!bookingId) {
+            showResult('refund_result', 'Please enter a booking ID.', true);
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://rentmenaija-a4ed.onrender.com/api/transactions/${bookingId}/refund/`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({}) // Empty body for refund
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showResult('refund_result', `Refund requested for booking ${bookingId} successfully!`, false);
+                // Clear the form
+                document.getElementById('refund_booking_id').value = '';
+                // Optionally reload bookings
+                // getBookings();
+            } else {
+                showResult('refund_result', `Failed to request refund: ${data.error || 'Unknown error'}`, true);
+            }
+        } catch (error) {
+            showResult('refund_result', `Error requesting refund: ${error.message}`, true);
+        }
+    }
+
+    async function releaseFunds() {
+        const bookingId = parseInt(document.getElementById('release_booking_id').value);
+
+        if (!bookingId) {
+            showResult('release_result', 'Please enter a booking ID.', true);
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://rentmenaija-a4ed.onrender.com/api/transactions/${bookingId}/release-funds/`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({}) // Empty body for release-funds
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showResult('release_result', `Funds released for booking ${bookingId} successfully!`, false);
+                // Clear the form
+                document.getElementById('release_booking_id').value = '';
+            } else {
+                showResult('release_result', `Failed to release funds: ${data.error || 'Unknown error'}`, true);
+            }
+        } catch (error) {
+            showResult('release_result', `Error releasing funds: ${error.message}`, true);
+        }
+    }
+
+    // Optional: Pre-fill token if known (for testing purposes)
+    // authToken = 'Token 93bf8e1ca886e955adf7730f187a18c781334e3b';
+    // if (authToken) {
+    //     document.getElementById('token_value').textContent = authToken;
+    //     document.getElementById('token_display').classList.remove('hidden');
+    //     document.getElementById('auth_section').classList.add('hidden');
+    //     document.getElementById('main_content').classList.remove('hidden');
+    // }
+
+</script>
+</body>
+</html>
