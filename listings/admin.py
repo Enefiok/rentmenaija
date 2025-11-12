@@ -235,6 +235,7 @@ class PropertyAdmin(admin.ModelAdmin):
 
     # === FULL LIST VIEW WITH ALL FIELDS VISIBLE AT A GLANCE ===
     list_display = (
+         'id',
         'property_title',
         'owner_name',
         'status_with_reason',
