@@ -501,7 +501,6 @@ def get_bookings(request):
 
     return Response(booking_data, status=status.HTTP_200_OK)
 
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @csrf_exempt
@@ -538,19 +537,39 @@ def confirm_booking(request, booking_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Perform the confirmation logic
-    booking.status = 'confirmed'
-    booking.save()
-    logger.info(f"✅ Booking ID {booking_id} confirmed for user {request.user.email}")
+    # Store the previous status to check if it was 'paid_pending_confirmation'
+    # Note: At this point, the booking object fetched hasn't been modified yet
+    previous_status = booking.status
 
-    # ✅ NEW: Trigger fund release logic here if conditions are met
-    if booking.can_release_funds():
+    if previous_status != 'paid_pending_confirmation':
+        logger.error(f"❌ Booking ID {booking_id} cannot be confirmed. Current status: {previous_status}")
+        return Response(
+            {"error": f"Cannot confirm booking with status '{previous_status}'. It must be 'paid_pending_confirmation'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Perform the confirmation logic (update status)
+    booking.status = 'confirmed'
+    # booking.save() # Don't save yet, do release first if applicable
+
+    # NEW: Check if fund release should happen *now* upon confirmation
+    # Assuming the goal is to release funds immediately upon successful confirmation
+    # and if the payment amount is greater than 0 and funds haven't been released yet.
+    should_release_funds_now = (
+        booking.initial_amount_paid_ngn > 0 and  # There is an amount to release
+        not booking.funds_released and           # Funds have not been released yet
+        booking.status == 'confirmed'            # The status is being set to confirmed
+    )
+
+    if should_release_funds_now:
         # Attempt immediate release (or schedule a task if needed)
         try:
             # Get landlord details
             landlord_details = booking.get_landlord_account_details()
             if not landlord_details or not landlord_details['account_number']:
                 logger.error(f"Cannot release funds for booking {booking.id}: Missing landlord bank details.")
+                # Save the confirmation status even if release fails initially
+                booking.save()
                 return Response({
                     "message": "✅ Your booking has been confirmed successfully.",
                     "booking_id": booking.id,
@@ -564,6 +583,8 @@ def confirm_booking(request, booking_id):
 
             if not bank_code:
                 logger.error(f"Cannot release funds for booking {booking.id}: Bank code not configured for '{landlord_details['bank_name']}'")
+                # Save the confirmation status even if release fails initially
+                booking.save()
                 return Response({
                     "message": "✅ Your booking has been confirmed successfully.",
                     "booking_id": booking.id,
@@ -603,49 +624,32 @@ def confirm_booking(request, booking_id):
                 # Squad disbursement successful
                 booking.mark_funds_released(payout_reference=squad_response.get('data', {}).get('transaction_reference'))
                 logger.info(f"✅ Funds released for booking {booking.id} to {landlord_details['account_name']}.")
-                return Response({
-                    "message": "✅ Your booking has been confirmed successfully. Funds have been released.",
-                    "booking_id": booking.id,
-                    "status": booking.status,
-                    "release_status": booking.release_status
-                }, status=status.HTTP_200_OK)
+                message = "✅ Your booking has been confirmed successfully. Funds have been released."
             else:
                 error_message = squad_response.get('message', 'Squad disbursement failed.')
                 logger.error(f"❌ Squad disbursement failed for booking {booking.id}: {error_message}")
-                # Optionally, update booking status to reflect disbursement failure
-                # booking.release_status = 'failed'
-                # booking.save()
-                return Response({
-                    "message": "✅ Your booking has been confirmed successfully.",
-                    "booking_id": booking.id,
-                    "status": booking.status,
-                    "error": f"Funds release failed: {error_message}"
-                }, status=status.HTTP_200_OK) # Or a different status if you want to signal partial success
+                # Keep release_status as 'pending' or set to 'failed', depending on your retry logic
+                message = f"✅ Your booking has been confirmed successfully. Funds release failed: {error_message}"
 
         except requests.exceptions.RequestException as e:
             logger.exception(f"💥 Error calling Squad API for fund release for booking {booking.id}")
-            return Response({
-                "message": "✅ Your booking has been confirmed successfully.",
-                "booking_id": booking.id,
-                "status": booking.status,
-                "error": f"Error releasing funds: {str(e)}"
-            }, status=status.HTTP_200_OK) # Or a different status
+            message = f"✅ Your booking has been confirmed successfully. Error releasing funds: {str(e)}"
         except Exception as e:
             logger.exception(f"💥 Unexpected error during fund release for booking {booking.id}")
-            return Response({
-                "message": "✅ Your booking has been confirmed successfully.",
-                "booking_id": booking.id,
-                "status": booking.status,
-                "error": f"An unexpected error occurred releasing funds: {str(e)}"
-            }, status=status.HTTP_200_OK) # Or a different status
+            message = f"✅ Your booking has been confirmed successfully. An unexpected error occurred releasing funds: {str(e)}"
     else:
-        logger.info(f"Funds cannot be released yet for booking {booking.id} (conditions not met).")
-        return Response({
-            "message": "✅ Your booking has been confirmed successfully.",
-            "booking_id": booking.id,
-            "status": booking.status,
-            "release_status": booking.release_status
-        }, status=status.HTTP_200_OK)
+        # If conditions for immediate release aren't met upon confirmation
+        message = "✅ Your booking has been confirmed successfully."
+
+    # Finally, save the booking status update
+    booking.save()
+
+    return Response({
+        "message": message,
+        "booking_id": booking.id,
+        "status": booking.status,
+        "release_status": booking.release_status
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
