@@ -60,7 +60,7 @@ class AgentPropertyDraft(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
 
-    # ✅ NEW: Bank account details for the property owner (landlord)
+    # ✅ NEW: Bank account details for the property owner (landlord) - SAME AS Landlord Draft
     owner_bank_name = models.CharField(max_length=100, blank=True, null=True, help_text="Bank name of the property owner")
     owner_account_number = models.CharField(max_length=20, blank=True, null=True, help_text="Account number of the property owner")
     owner_account_name = models.CharField(max_length=200, blank=True, null=True, help_text="Account name of the property owner")
@@ -121,7 +121,7 @@ class AgentProperty(models.Model):
     rejected_reason = models.TextField(blank=True, null=True)
     published_at = models.DateTimeField(null=True, blank=True)
 
-    # ✅ NEW: Bank account details for the property owner (landlord) - copied from draft after approval
+    # ✅ NEW: Bank account details for the property owner (landlord) - copied from draft after approval - SAME AS Landlord Published
     owner_bank_name = models.CharField(max_length=100, blank=True, null=True, help_text="Bank name of the property owner")
     owner_account_number = models.CharField(max_length=20, blank=True, null=True, help_text="Account number of the property owner")
     owner_account_name = models.CharField(max_length=200, blank=True, null=True, help_text="Account name of the property owner")
@@ -135,7 +135,7 @@ class AgentProperty(models.Model):
         self.approved_at = timezone.now()
         self.published_at = timezone.now()
         
-        # ✅ NEW: Copy bank details from the draft when approving
+        # ✅ NEW: Copy bank details from the draft when approving - SAME AS Landlord Published
         draft = self.draft
         self.owner_bank_name = draft.owner_bank_name
         self.owner_account_number = draft.owner_account_number

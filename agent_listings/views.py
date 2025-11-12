@@ -154,7 +154,7 @@ def submit_agent_property_for_review(request, draft_id):
     required_fields = [
         'landlord_name', 'landlord_phone', 'title', 'monthly_rent',
         'address', 'latitude', 'longitude', 'images',
-        'owner_bank_name', 'owner_account_number', 'owner_account_name'
+        'owner_bank_name', 'owner_account_number', 'owner_account_name' # Added bank details
     ]
     missing = [f for f in required_fields if not getattr(draft, f, None)]
     if missing:
@@ -170,7 +170,7 @@ def submit_agent_property_for_review(request, draft_id):
     if not all(agreements):
         return Response({"error": "You must accept all terms and provide a digital signature."}, status=400)
 
-    # ✅ NEW: Validate bank account number format
+    # ✅ NEW: Validate bank account number format (copied from listings/views.py)
     if draft.owner_account_number:
         if not draft.owner_account_number.isdigit():
             return Response({"error": "Account number must contain only digits"}, status=400)
@@ -191,10 +191,10 @@ def submit_agent_property_for_review(request, draft_id):
 
     draft.signed_at = timezone.now()
     draft.submitted_for_review = True
-    # ✅ UPDATED: Include bank details in save
+    # ✅ UPDATED: Include bank details in save (copied from listings/views.py)
     draft.save(update_fields=[
         'signed_at', 'submitted_for_review', 
-        'owner_bank_name', 'owner_account_number', 'owner_account_name'
+        'owner_bank_name', 'owner_account_number', 'owner_account_name' # Added bank details fields
     ])
 
     AgentProperty.objects.get_or_create(draft=draft)

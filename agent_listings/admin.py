@@ -53,7 +53,8 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
         'owner_account_number',
     )
     readonly_fields = ('created_at', 'updated_at', 'signed_at')
-    actions = ['mark_submitted', 'mark_not_submitted']
+    # ✅ NEW: Add bank verification actions for drafts
+    actions = ['mark_submitted', 'mark_not_submitted', 'verify_bank_selected_drafts', 'unverify_bank_selected_drafts']
 
     def get_rent_display(self, obj):
         return format_currency(obj.monthly_rent, obj.currency)
@@ -147,6 +148,17 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
         self.message_user(request, f"🟡 Marked {updated} draft(s) as not submitted.")
     mark_not_submitted.short_description = "🟡 Mark selected drafts as not submitted"
 
+    # ✅ NEW: Bank verification actions for drafts
+    def verify_bank_selected_drafts(self, request, queryset):
+        updated = queryset.update(bank_verified=True)
+        self.message_user(request, f"✅ Landlord Bank verification set to True for {updated} draft(s).")
+    verify_bank_selected_drafts.short_description = "✅ Verify Landlord Bank for selected drafts"
+
+    def unverify_bank_selected_drafts(self, request, queryset):
+        updated = queryset.update(bank_verified=False)
+        self.message_user(request, f"❌ Landlord Bank verification set to False for {updated} draft(s).")
+    unverify_bank_selected_drafts.short_description = "❌ Unverify Landlord Bank for selected drafts"
+
 
 # === ADMIN FOR APPROVAL (AgentProperty) ===
 @admin.register(AgentProperty)
@@ -201,15 +213,24 @@ class AgentPropertyAdmin(admin.ModelAdmin):
 
     # ✅ NEW: Bank Info Columns for List View
     def owner_bank_name(self, obj):
-        return obj.draft.owner_bank_name or "—"
+        # Check both Property and its related draft for bank details
+        name = obj.owner_bank_name or getattr(obj.draft, 'owner_bank_name', None)
+        return name or "-" # Return "-" if neither has the value
     owner_bank_name.short_description = "Bank Name"
 
     def owner_account_number(self, obj):
-        return obj.draft.owner_account_number or "—"
+        number = obj.owner_account_number or getattr(obj.draft, 'owner_account_number', None)
+        return number or "-" # Return "-" if neither has the value
     owner_account_number.short_description = "Account Number"
 
+    def owner_account_name(self, obj):
+        name = obj.owner_account_name or getattr(obj.draft, 'owner_account_name', None)
+        return name or "-" # Return "-" if neither has the value
+    owner_account_name.short_description = "Account Name"
+
     def bank_verified_status(self, obj):
-        verified = obj.draft.bank_verified
+        # Check the Property model first, then the draft
+        verified = obj.bank_verified or getattr(obj.draft, 'bank_verified', False)
         return format_html("✅ Yes") if verified else format_html("❌ No")
     bank_verified_status.short_description = "Bank Verified?"
 
@@ -305,6 +326,7 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         # ✅ NEW: Add bank columns to list view
         'owner_bank_name',
         'owner_account_number',
+        'owner_account_name', # NEW: Include account name in list
         'bank_verified_status',
         'description_preview',
         'known_issues_preview',
@@ -328,7 +350,8 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'draft__currency',
         'draft__created_at',
         # ✅ NEW: Add bank verification filter
-        ('draft__bank_verified', admin.BooleanFieldListFilter),
+        'bank_verified', # Filter by bank verification status on Property
+        ('draft__bank_verified', admin.BooleanFieldListFilter), # Filter by bank verification status on Draft
     )
 
     search_fields = (
@@ -343,8 +366,10 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'draft__landlord_name',
         'draft__landlord_phone',
         # ✅ NEW: Add bank fields to search
-        'draft__owner_bank_name',
-        'draft__owner_account_number',
+        'owner_bank_name', # Search Property bank name
+        'draft__owner_bank_name', # Search Draft bank name
+        'owner_account_number', # Search Property account number
+        'draft__owner_account_number', # Search Draft account number
     )
 
     date_hierarchy = 'draft__created_at'
@@ -381,7 +406,8 @@ class AgentPropertyAdmin(admin.ModelAdmin):
                 # ✅ NEW: Add bank details to financial info section
                 "owner_bank_name_detail",
                 "owner_account_number_detail",
-                "bank_verified_detail",
+                "owner_account_name_detail", # NEW: Include account name in detail
+                "bank_verified_detail", # This is now editable if removed from readonly_fields
             ),
             "classes": ("wide",),
         }),
@@ -409,15 +435,22 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         'currency',
         'lease_term_preference_detail',
         'landlord_contact_info',
-        # ✅ NEW: Add bank detail readonly fields
+        # ✅ NEW: Add bank detail readonly fields for the detail view
         'owner_bank_name_detail',
         'owner_account_number_detail',
-        'bank_verified_detail',
+        'owner_account_name_detail',
+        # 'bank_verified_detail', # Uncomment this line if you want the field editable in the form view for Properties
+        # If you make it editable in the form, remove 'bank_verified_detail' from this readonly_fields tuple.
+        # However, the admin actions are often preferred for bulk changes.
+        'bank_verified_detail', # Kept as readonly to use admin actions for toggling
         'approved_at',
         'published_at',
         'approved_by',
         'status'
     )
+
+    # ✅ NEW: Add bank verification actions for approved properties and drafts, alongside existing actions
+    actions = ['approve_selected', 'reject_selected', 'verify_bank_selected_properties', 'unverify_bank_selected_properties']
 
     def full_address(self, obj):
         return obj.draft.address or "-"
@@ -471,16 +504,27 @@ class AgentPropertyAdmin(admin.ModelAdmin):
 
     # ✅ NEW: Bank Detail Readonly Fields for Detail View
     def owner_bank_name_detail(self, obj):
-        return obj.draft.owner_bank_name or "—"
-    owner_bank_name_detail.short_description = "Owner Bank Name"
+        # Prefer the bank details stored directly on the Property model after approval
+        # Fallback to the details on the draft if not set on the Property
+        name = obj.owner_bank_name or getattr(obj.draft, 'owner_bank_name', None)
+        return name or "-"
+    owner_bank_name_detail.short_description = "Bank Name (Property)"
 
     def owner_account_number_detail(self, obj):
-        return obj.draft.owner_account_number or "—"
-    owner_account_number_detail.short_description = "Owner Account Number"
+        number = obj.owner_account_number or getattr(obj.draft, 'owner_account_number', None)
+        return number or "-"
+    owner_account_number_detail.short_description = "Account Number (Property)"
+
+    def owner_account_name_detail(self, obj):
+        name = obj.owner_account_name or getattr(obj.draft, 'owner_account_name', None)
+        return name or "-"
+    owner_account_name_detail.short_description = "Account Name (Property)"
 
     def bank_verified_detail(self, obj):
-        return "✅ Yes" if obj.draft.bank_verified else "❌ No"
-    bank_verified_detail.short_description = "Bank Verified"
+        # Check the Property model first, then the draft
+        verified = obj.bank_verified or getattr(obj.draft, 'bank_verified', False)
+        return "Yes" if verified else "No"
+    bank_verified_detail.short_description = "Bank Verified (Property)"
 
     # === SECURITY & UX ===
     def has_add_permission(self, request):
@@ -490,8 +534,6 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         if obj:
             return self.readonly_fields + ('status',)
         return self.readonly_fields
-
-    actions = ['approve_selected', 'reject_selected']
 
     def approve_selected(self, request, queryset):
         updated = 0
@@ -512,3 +554,24 @@ class AgentPropertyAdmin(admin.ModelAdmin):
         self.message_user(request, f"❌ Rejected {updated} listing(s).")
 
     reject_selected.short_description = "❌ Reject selected listings"
+
+    # ✅ NEW: Bank verification actions for PropertyAdmin (approved properties)
+    def verify_bank_selected_properties(self, request, queryset):
+        updated = 0
+        for prop in queryset:
+            # Update the Property instance itself
+            prop.bank_verified = True
+            prop.save(update_fields=['bank_verified'])
+            updated += 1
+        self.message_user(request, f"✅ Bank verification set to True for {updated} approved property/ies.")
+    verify_bank_selected_properties.short_description = "✅ Verify Bank for selected properties"
+
+    def unverify_bank_selected_properties(self, request, queryset):
+        updated = 0
+        for prop in queryset:
+            # Update the Property instance itself
+            prop.bank_verified = False
+            prop.save(update_fields=['bank_verified'])
+            updated += 1
+        self.message_user(request, f"❌ Bank verification set to False for {updated} approved property/ies.")
+    unverify_bank_selected_properties.short_description = "❌ Unverify Bank for selected properties"
