@@ -173,7 +173,7 @@ def submit_property_for_review(request, draft_id):
     """Submit the draft for admin approval"""
     draft = get_object_or_404(PropertyDraft, id=draft_id, user=request.user)
 
-    # ✅ UPDATED: Include bank details in required fields
+    # ✅ Include bank details in required fields
     required_fields = [
         'title', 'monthly_rent', 'phone_number', 'description',
         'address', 'latitude', 'longitude', 'images',
@@ -186,6 +186,7 @@ def submit_property_for_review(request, draft_id):
             "missing": missing
         }, status=400)
 
+    # ✅ Verify user has accepted all agreements
     agreements = [
         draft.is_owner_or_representative,
         draft.details_accurate,
@@ -198,35 +199,38 @@ def submit_property_for_review(request, draft_id):
             "error": "You must accept all terms and sign the agreement."
         }, status=400)
 
-    # ✅ NEW: Validate bank account number format
+    # ✅ Validate bank account number format
     if draft.owner_account_number:
         if not draft.owner_account_number.isdigit():
             return Response({"error": "Account number must contain only digits"}, status=400)
         if len(draft.owner_account_number) != 10:
             return Response({"error": "Account number must be exactly 10 digits"}, status=400)
 
+    # ✅ Reverse geocode to set city and state (safe fallback)
     if draft.latitude is not None and draft.longitude is not None:
         try:
             from .utils import reverse_geocode
             location_data = reverse_geocode(draft.latitude, draft.longitude)
-            draft.city = location_data['city']
-            draft.state = location_data['state']
+            draft.city = location_data['city'] or ''
+            draft.state = location_data['state'] or ''
         except Exception as e:
-            print(f"Reverse geocoding failed during submission: {e}")
+            print(f"[Property] Reverse geocoding failed during submission: {e}")
 
+    # ✅ Mark as signed and submitted
     draft.signed_at = timezone.now()
     draft.submitted_for_review = True
-    # ✅ UPDATED: Include bank details in save
     draft.save(update_fields=[
         'signed_at', 'submitted_for_review',
-        'owner_bank_name', 'owner_account_number', 'owner_account_name'
+        'owner_bank_name', 'owner_account_number', 'owner_account_name',
+        'city', 'state'
     ])
 
-    Property.objects.get_or_create(draft=draft)
+    # ✅ Create or retrieve the Property record linked to this draft
+    published_property, created = Property.objects.get_or_create(draft=draft)
 
     return Response({
         "message": "✅ Your listing has been submitted successfully and is now awaiting admin approval.",
-        "listing_id": draft.id
+        "listing_id": published_property.id  # ✅ Return Property ID instead of draft ID
     }, status=200)
 
 
