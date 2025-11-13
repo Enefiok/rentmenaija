@@ -69,9 +69,11 @@ class AgentPropertyDraftAdmin(admin.ModelAdmin):
     agent_link.admin_order_field = 'agent__email'
 
     def address_truncated(self, obj):
-        return obj.address if len(obj.address) < 50 else obj.address[:47] + "..."
+        address = obj.address or ""  # handle NoneType safely
+        return address if len(address) < 50 else address[:47] + "..."
     address_truncated.short_description = "Address"
     address_truncated.admin_order_field = 'address'
+
 
     def image_thumbnail(self, obj):
         images = obj.images
