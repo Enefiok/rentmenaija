@@ -23,7 +23,7 @@ class RoomTypeInline(admin.TabularInline):
 @admin.register(HotelListing)
 class HotelListingAdmin(admin.ModelAdmin):
     list_display = (
-        'name', 'property_type', 'city', 'state', 'status_badge',
+        'id', 'name', 'property_type', 'city', 'state', 'status_badge',
         'owner_email',
         # --- NEW: Bank Details Columns ---
         'bank_name',          # Added
