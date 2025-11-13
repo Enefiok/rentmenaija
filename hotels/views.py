@@ -59,33 +59,40 @@ def update_hotel_basic_info(request, hotel_id):
 
 
 # === STEP 3: Set Location ===
-@api_view(['POST'])
+@api_view(['PATCH']) # ✅ CHANGED: Method is now PATCH
 @permission_classes([IsAuthenticated])
 def set_hotel_location(request, hotel_id):
     hotel = get_object_or_404(HotelListing, id=hotel_id, owner=request.user, status='draft')
     address = request.data.get('address')
-    if not address:
-        return Response({"error": "Address is required"}, status=status.HTTP_400_BAD_REQUEST)
+    latitude = request.data.get('latitude')
+    longitude = request.data.get('longitude')
+    city = request.data.get('city') # ✅ NEW: Get city from request
+    state = request.data.get('state') # ✅ NEW: Get state from request
 
-    coords = geocode_address(address)
-    if not coords:
-        return Response({
-            "error": "Could not find coordinates for this address."
-        }, status=status.HTTP_400_BAD_REQUEST)
+    # Validate required fields
+    if not all([address, latitude, longitude]):
+        return Response({"error": "Address, latitude, and longitude are required"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Validate coordinates
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (ValueError, TypeError):
+        return Response({"error": "Latitude and longitude must be valid numbers"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Update hotel object with provided data
     hotel.address = address
-    hotel.latitude = coords['lat']
-    hotel.longitude = coords['lng']
-    hotel.save(update_fields=['address', 'latitude', 'longitude'])
+    hotel.latitude = latitude
+    hotel.longitude = longitude
+    if city is not None: # ✅ NEW: Update city if provided
+        hotel.city = city
+    if state is not None: # ✅ NEW: Update state if provided
+        hotel.state = state
 
     try:
-        from listings.utils import reverse_geocode
-        loc_data = reverse_geocode(hotel.latitude, hotel.longitude)
-        hotel.city = loc_data.get('city', '') or ''
-        hotel.state = loc_data.get('state', '') or ''
-        hotel.save(update_fields=['city', 'state'])
+        hotel.save(update_fields=['address', 'latitude', 'longitude', 'city', 'state']) # ✅ UPDATED: Include city, state in save
     except Exception as e:
-        print(f"[Hotel] Reverse geocoding failed: {e}")
+        return Response({"error": "Failed to update location"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response({
         "address": hotel.address,
@@ -94,6 +101,9 @@ def set_hotel_location(request, hotel_id):
         "city": hotel.city,
         "state": hotel.state
     }, status=status.HTTP_200_OK)
+
+
+
 
 
 # === STEP 4: Add Room Type ===
