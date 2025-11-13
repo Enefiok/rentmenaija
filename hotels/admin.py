@@ -24,13 +24,18 @@ class RoomTypeInline(admin.TabularInline):
 class HotelListingAdmin(admin.ModelAdmin):
     list_display = (
         'name', 'property_type', 'city', 'state', 'status_badge',
-        'owner_email', 'bank_details_summary', # NEW: Show bank details summary in list
+        'owner_email',
+        # --- NEW: Bank Details Columns ---
+        'bank_name',          # Added
+        'account_number',     # Added
+        'bank_verified_status', # Added
+        # --- END NEW ---
         'created_at', 'published_at'
     )
     list_filter = (
         'status', 'property_type', 'city', 'state', 'created_at',
         # ✅ NEW: Add bank verification filter
-        'bank_verified',
+        'bank_verified', # Filter by bank verification status on HotelListing
     )
     search_fields = (
         'name', 'address', 'owner__email',
@@ -45,7 +50,8 @@ class HotelListingAdmin(admin.ModelAdmin):
         # ✅ NEW: Add bank detail readonly fields
         'owner_bank_name', 'owner_account_number', 'owner_account_name', 'bank_verified',
     )
-    actions = ['approve_listings', 'reject_listings']
+    # ✅ NEW: Add bank verification actions for drafts
+    actions = ['approve_listings', 'reject_listings', 'verify_bank_selected', 'unverify_bank_selected']
     fieldsets = (
         ('Owner & Status', {
             'fields': ('owner', 'status', 'published_at')
@@ -78,17 +84,22 @@ class HotelListingAdmin(admin.ModelAdmin):
     )
     inlines = [HotelFeatureInline, RoomTypeInline]
 
-    # ✅ NEW: Bank Details Summary Column
-    def bank_details_summary(self, obj):
-        if not obj.owner_account_number:
-            return format_html("<span style='color: red;'>❌ No Bank Details</span>")
-        status = "✅ Verified" if obj.bank_verified else "🟡 Pending"
-        return format_html(
-            "<div>{}</div><div style='font-size: 0.8em; color: gray;'>{}</div>",
-            f"{obj.owner_bank_name} - {obj.owner_account_number}",
-            status
-        )
-    bank_details_summary.short_description = "Bank Details"
+    # --- NEW: Bank Details Columns for List View ---
+    def bank_name(self, obj):
+        name = obj.owner_bank_name
+        return name or "-" # Return "-" if no value
+    bank_name.short_description = "Bank Name"
+
+    def account_number(self, obj):
+        number = obj.owner_account_number
+        return number or "-" # Return "-" if no value
+    account_number.short_description = "Account Number"
+
+    def bank_verified_status(self, obj):
+        verified = obj.bank_verified
+        return format_html("✅ Yes") if verified else format_html("❌ No")
+    bank_verified_status.short_description = "Bank Verified?"
+    # --- END NEW ---
 
     def owner_email(self, obj):
         return obj.owner.email
@@ -105,6 +116,17 @@ class HotelListingAdmin(admin.ModelAdmin):
         return format_html(badges.get(obj.status, obj.status))
     status_badge.short_description = "Status"
     status_badge.admin_order_field = 'status'
+
+    # ✅ NEW: Bank verification actions for drafts
+    def verify_bank_selected(self, request, queryset):
+        updated = queryset.update(bank_verified=True)
+        self.message_user(request, f"✅ Bank verification set to True for {updated} draft(s).")
+    verify_bank_selected.short_description = "✅ Verify Bank for selected drafts"
+
+    def unverify_bank_selected(self, request, queryset):
+        updated = queryset.update(bank_verified=False)
+        self.message_user(request, f"❌ Bank verification set to False for {updated} draft(s).")
+    unverify_bank_selected.short_description = "❌ Unverify Bank for selected drafts"
 
     def approve_listings(self, request, queryset):
         approved = 0
