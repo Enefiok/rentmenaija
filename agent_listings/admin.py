@@ -21,6 +21,7 @@ def format_currency(amount, currency='NGN'):
 @admin.register(AgentPropertyDraft)
 class AgentPropertyDraftAdmin(admin.ModelAdmin):
     list_display = (
+        'id',
         'title',
         'get_rent_display',
         'lease_term_preference',
@@ -312,6 +313,7 @@ class AgentPropertyAdmin(admin.ModelAdmin):
 
     # === FULL LIST VIEW WITH ALL FIELDS VISIBLE AT A GLANCE ===
     list_display = (
+        'id',
         'property_title',
         'agent_name',
         'status_with_reason',
