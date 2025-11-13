@@ -197,11 +197,13 @@ def submit_agent_property_for_review(request, draft_id):
         'owner_bank_name', 'owner_account_number', 'owner_account_name' # Added bank details fields
     ])
 
-    AgentProperty.objects.get_or_create(draft=draft)
+    # Get or create the published AgentProperty record linked to this draft
+    published_property, created = AgentProperty.objects.get_or_create(draft=draft)
+    # 'published_property.id' is the ID of the approved/published listing
 
     return Response({
         "message": "✅ Your agent listing has been submitted successfully and is now awaiting admin approval.",
-        "listing_id": draft.id
+        "listing_id": published_property.id # ✅ RETURN THE PUBLISHED LISTING ID
     }, status=200)
 
 # === PUBLIC ENDPOINTS ===
