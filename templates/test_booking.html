@@ -171,6 +171,12 @@
                 <label for="payment_listing_id">Listing ID:</label>
                 <input type="number" id="payment_listing_id" placeholder="e.g., 1">
             </div>
+            <!-- ADD THIS NEW FORM GROUP FOR ROOM TYPE ID -->
+            <div id="hotel_room_type_div" class="form-group hidden">
+                <label for="payment_room_type_id">Room Type ID (for hotels):</label>
+                <input type="number" id="payment_room_type_id" placeholder="e.g., 1">
+            </div>
+            <!-- END ADD -->
             <div class="form-group">
                 <label for="payment_type">Payment Type:</label>
                 <select id="payment_type">
@@ -280,10 +286,13 @@
     function handlePaymentListingTypeChange() {
         const type = document.getElementById('payment_listing_type').value;
         const hotelDatesDiv = document.getElementById('hotel_dates_payment');
+        const hotelRoomTypeDiv = document.getElementById('hotel_room_type_div'); // Get the new div
         if (type === 'hotel_listing') {
             hotelDatesDiv.classList.remove('hidden');
+            hotelRoomTypeDiv.classList.remove('hidden'); // Show the room type field
         } else {
             hotelDatesDiv.classList.add('hidden');
+            hotelRoomTypeDiv.classList.add('hidden'); // Hide the room type field
         }
     }
 
@@ -412,25 +421,34 @@
         const paymentType = document.getElementById('payment_type').value;
         let checkInDate = document.getElementById('payment_check_in_date').value;
         let checkOutDate = document.getElementById('payment_check_out_date').value;
+        let roomTypeId = document.getElementById('payment_room_type_id').value; // Get the room type ID
 
         if (!listingType || !listingId || !paymentType) {
             showResult('payment_result', 'Please select listing type, listing ID, and payment type.', true);
             return;
         }
 
-        // Validate hotel dates if applicable (this part remains for payment)
+        // Validate hotel fields if applicable
         if (listingType === 'hotel_listing') {
-            if (!checkInDate || !checkOutDate) {
-                showResult('payment_result', 'Please enter both check-in and check-out dates for hotels.', true);
+            if (!checkInDate || !checkOutDate || !roomTypeId) { // Add roomTypeId to the check
+                showResult('payment_result', 'Please enter check-in, check-out dates, and room type ID for hotels.', true);
                 return;
             }
+            // Validate dates
             if (new Date(checkOutDate) <= new Date(checkInDate)) {
                 showResult('payment_result', 'Check-out date must be after check-in date.', true);
                 return;
             }
+            // Validate roomTypeId
+            roomTypeId = parseInt(roomTypeId); // Convert to integer
+            if (isNaN(roomTypeId) || roomTypeId <= 0) {
+                 showResult('payment_result', 'Please enter a valid Room Type ID (positive integer).', true);
+                 return;
+            }
         } else {
             checkInDate = null;
             checkOutDate = null;
+            roomTypeId = null; // Set to null for non-hotels
         }
 
         try {
@@ -442,11 +460,22 @@
                     listing_id: listingId,
                     payment_type: paymentType,
                     check_in_date: checkInDate,
-                    check_out_date: checkOutDate
+                    check_out_date: checkOutDate,
+                    room_type_id: roomTypeId // Include the room type ID
                 })
             });
 
-            const data = await response.json();
+            // *** CRITICAL: Check if the response is JSON before parsing ***
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                // If the response is not JSON, it's likely an HTML error page
+                const errorText = await response.text(); // Get the raw text/html content
+                console.error("Non-JSON response received:", errorText); // Log for debugging
+                showResult('payment_result', `Error initiating payment: Server returned non-JSON response. Check server logs. Raw response: ${errorText.substring(0, 200)}...`, true);
+                return; // Stop execution
+            }
+
+            const data = await response.json(); // Now safe to parse as JSON
 
             if (response.ok) {
                 // Show the checkout URL and lease payment ID
@@ -459,6 +488,9 @@
                 showResult('payment_result', `Failed to initiate payment: ${data.error || 'Unknown error'}`, true);
             }
         } catch (error) {
+            // This handles network errors or JSON parsing errors from the backend
+            // The check above should prevent JSON parsing errors from reaching here due to HTML,
+            // but it still catches network issues.
             showResult('payment_result', `Error initiating payment: ${error.message}`, true);
         }
     }
