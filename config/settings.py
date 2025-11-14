@@ -151,6 +151,8 @@ else:
         "https://www.rentmenaija.com",
         "http://localhost:51097",
         "http://127.0.0.1:51097",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
         # Add more domains here later if needed (e.g., Netlify, Vercel)
       
     ]
