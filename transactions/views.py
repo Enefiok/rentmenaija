@@ -49,7 +49,8 @@ def get_landlord_or_agent_user(listing_type, listing_id):
 def initiate_lease_payment(request):
     """
     Initiate a payment for a landlord or agent listing (e.g., security deposit, first month rent, full lease amount).
-    Requires: listing_type ('landlord_listing' or 'agent_listing'), listing_id, payment_type.
+    For hotel listings, requires check_in_date, check_out_date, and room_type_id.
+    Requires: listing_type ('landlord_listing', 'agent_listing', or 'hotel_listing'), listing_id, payment_type.
     Uses authenticated user as the tenant.
     """
     logger.info("🔥 INITIATE_LEASE_PAYMENT CALLED")
@@ -162,23 +163,56 @@ def initiate_lease_payment(request):
                  status=status.HTTP_400_BAD_REQUEST
              )
 
-        # Calculate amount for hotel stay (nightly rate * number of nights) - This part remains the same
+        # Calculate amount for hotel stay (room type nightly rate * number of nights)
         if listing_type == 'hotel_listing':
             check_in = data.get('check_in_date')
             check_out = data.get('check_out_date')
-            
-            if not check_in or not check_out:
+            room_type_id = data.get('room_type_id') # Get the specific room type ID
+
+            if not all([check_in, check_out, room_type_id]):
+                missing = [k for k in ['check_in_date', 'check_out_date', 'room_type_id'] if not data.get(k)]
+                logger.error(f"❌ Missing fields for hotel payment: {missing}")
                 return Response(
-                    {"error": "Check-in and check-out dates are required for hotel bookings."},
+                    {"error": f"Check-in date, check-out date, and room type ID are required for hotel bookings. Missing: {missing}"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-                
-            # Calculate number of nights
-            from datetime import datetime
-            check_in_date = datetime.strptime(check_in, '%Y-%m-%d').date()
-            check_out_date = datetime.strptime(check_out, '%Y-%m-%d').date()
-            nights = (check_out_date - check_in_date).days
-            amount = float(listing_obj.price_per_night) * nights # Use the found HotelListing object
+
+            # Validate dates format and calculate nights
+            try:
+                from datetime import datetime
+                check_in_date = datetime.strptime(check_in, '%Y-%m-%d').date()
+                check_out_date = datetime.strptime(check_out, '%Y-%m-%d').date()
+                if check_out_date <= check_in_date:
+                    return Response(
+                        {"error": "Check-out date must be after check-in date."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                nights = (check_out_date - check_in_date).days
+                if nights <= 0:
+                    return Response(
+                        {"error": "Number of nights must be greater than 0."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Get the specific RoomType associated with this HotelListing
+            try:
+                from hotels.models import RoomType
+                room_type = RoomType.objects.get(id=room_type_id, hotel_id=listing_id) # Ensure the room belongs to the specified hotel
+            except RoomType.DoesNotExist:
+                logger.error(f"❌ RoomType ID {room_type_id} not found for HotelListing ID {listing_id}")
+                return Response(
+                    {"error": f"Room type ID {room_type_id} not found for the specified hotel."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Calculate the amount using the room type's nightly rate
+            amount = float(room_type.price_per_night) * nights
+            logger.info(f"Calculated hotel amount: {amount} for {nights} nights in RoomType {room_type.name} (ID: {room_type.id})")
 
     except (Property.DoesNotExist, AgentProperty.DoesNotExist, HotelListing.DoesNotExist, PropertyDraft.DoesNotExist, AgentPropertyDraft.DoesNotExist): # Catch specific DoesNotExist
         logger.error(f"❌ {listing_type.replace('_', ' ').title()} ID {listing_id} not found in DB")
@@ -249,23 +283,29 @@ def initiate_lease_payment(request):
         if listing_type == 'hotel_listing':
             original_booking.check_in_date = data.get('check_in_date')
             original_booking.check_out_date = data.get('check_out_date')
+            # Store the room type ID for hotel bookings (assuming your Booking model has this field)
+            original_booking.room_type_id = data.get('room_type_id') # Update based on your Booking model
         original_booking.save()
         lease_payment.booking = original_booking # Ensure the reverse link is also set
         lease_payment.save() # Save the lease_payment with the booking link
         logger.info(f"🔗 Lease Payment #{lease_payment.id} linked to Booking #{original_booking.id}, Booking status updated to 'paid_pending_confirmation'.")
     except Booking.DoesNotExist:
         # If no saved booking exists, create a booking record for this payment
-        booking = Booking.objects.create(
-            user=request.user,
-            listing_type=listing_type,
-            listing_id=listing_id,
-            lease_payment=lease_payment,
-            status='paid_pending_confirmation',
-            initial_amount_paid_ngn=amount,
-            payment_type=payment_type,
-            check_in_date=data.get('check_in_date') if listing_type == 'hotel_listing' else None,
-            check_out_date=data.get('check_out_date') if listing_type == 'hotel_listing' else None,
-        )
+        booking_data = {
+            'user': request.user,
+            'listing_type': listing_type,
+            'listing_id': listing_id,
+            'lease_payment': lease_payment,
+            'status': 'paid_pending_confirmation',
+            'initial_amount_paid_ngn': amount,
+            'payment_type': payment_type,
+            'check_in_date': data.get('check_in_date') if listing_type == 'hotel_listing' else None,
+            'check_out_date': data.get('check_out_date') if listing_type == 'hotel_listing' else None,
+        }
+        # Add room_type_id to the booking data if it's a hotel booking (assuming your Booking model has this field)
+        if listing_type == 'hotel_listing':
+            booking_data['room_type_id'] = data.get('room_type_id') # Update based on your Booking model
+        booking = Booking.objects.create(**booking_data)
         logger.info(f"📝 New Booking created for standalone payment: ID={booking.id}")
     except Booking.MultipleObjectsReturned:
         logger.error(f"❌ Multiple saved Bookings found for user {request.user.id}, {listing_type} ID {listing_id}. Cannot link LeasePayment #{lease_payment.id}.")
@@ -354,7 +394,6 @@ def initiate_lease_payment(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
 # --- Updated Booking Views for Escrow System ---
 
 
