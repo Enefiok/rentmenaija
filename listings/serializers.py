@@ -1,13 +1,56 @@
 # listings/serializers.py
 
 from rest_framework import serializers
+from decimal import Decimal
 from .models import PropertyDraft, Property
 
 
 class PropertyDraftSerializer(serializers.ModelSerializer):
+    # Explicitly define fields to handle type conversion from strings
+    monthly_rent = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    owner_account_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
     class Meta:
         model = PropertyDraft
-        exclude = ['created_at', 'updated_at']  # Exclude metadata for now
+        exclude = ['created_at', 'updated_at']
+
+    def validate_monthly_rent(self, value):
+        """Convert string to Decimal for monthly_rent"""
+        if value is None or value == '' or value == 'null':
+            return None
+        try:
+            return Decimal(str(value))
+        except (ValueError, TypeError):
+            raise serializers.ValidationError("monthly_rent must be a valid number")
+
+    def validate_phone_number(self, value):
+        """Ensure phone_number is stored as string"""
+        if value is None or value == '':
+            return None
+        return str(value)
+
+    def validate_owner_account_number(self, value):
+        """Ensure owner_account_number is stored as string"""
+        if value is None or value == '':
+            return None
+        return str(value)
+
+    def to_internal_value(self, data):
+        """Handle conversion of string values to appropriate types before saving"""
+        # Make a copy to avoid modifying original data
+        data = data.copy()
+        
+        # Convert monthly_rent to Decimal if it's provided as string
+        if 'monthly_rent' in data and data['monthly_rent'] not in (None, '', 'null'):
+            try:
+                monthly_rent_val = data['monthly_rent']
+                if monthly_rent_val is not None:
+                    data['monthly_rent'] = str(monthly_rent_val)
+            except (ValueError, TypeError):
+                pass
+        
+        return super().to_internal_value(data)
 
 
 class PropertyAdminSerializer(serializers.ModelSerializer):
