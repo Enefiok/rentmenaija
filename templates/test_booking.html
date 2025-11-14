@@ -273,11 +273,8 @@
     function handleListingTypeChange() {
         const type = document.getElementById('save_listing_type').value;
         const hotelDatesDiv = document.getElementById('hotel_dates_save');
-        if (type === 'hotel_listing') {
-            hotelDatesDiv.classList.remove('hidden');
-        } else {
-            hotelDatesDiv.classList.add('hidden');
-        }
+        // *** CHANGED LOGIC: Always hide dates for save booking, regardless of type ***
+        hotelDatesDiv.classList.add('hidden');
     }
 
     function handlePaymentListingTypeChange() {
@@ -354,30 +351,32 @@
     async function saveBooking() {
         const listingType = document.getElementById('save_listing_type').value;
         const listingId = parseInt(document.getElementById('save_listing_id').value);
-        let checkInDate = document.getElementById('save_check_in_date').value;
-        let checkOutDate = document.getElementById('save_check_out_date').value;
+        // *** CHANGED LOGIC: Do not get dates for save booking ***
+        // let checkInDate = document.getElementById('save_check_in_date').value;
+        // let checkOutDate = document.getElementById('save_check_out_date').value;
 
         if (!listingType || !listingId) {
             showResult('save_booking_result', 'Please select listing type and enter listing ID.', true);
             return;
         }
 
-        // Validate hotel dates if applicable
-        if (listingType === 'hotel_listing') {
-            if (!checkInDate || !checkOutDate) {
-                showResult('save_booking_result', 'Please enter both check-in and check-out dates for hotels.', true);
-                return;
-            }
-            // Basic date validation (check if check-out is after check-in)
-            if (new Date(checkOutDate) <= new Date(checkInDate)) {
-                showResult('save_booking_result', 'Check-out date must be after check-in date.', true);
-                return;
-            }
-        } else {
-            // Clear dates if not a hotel
-            checkInDate = null;
-            checkOutDate = null;
-        }
+        // *** CHANGED LOGIC: No validation for hotel dates during save ***
+        // The backend handles optional dates correctly now
+        // if (listingType === 'hotel_listing') {
+        //     if (!checkInDate || !checkOutDate) {
+        //         showResult('save_booking_result', 'Please enter both check-in and check-out dates for hotels.', true);
+        //         return;
+        //     }
+        //     // Basic date validation (check if check-out is after check-in)
+        //     if (new Date(checkOutDate) <= new Date(checkInDate)) {
+        //         showResult('save_booking_result', 'Check-out date must be after check-in date.', true);
+        //         return;
+        //     }
+        // } else {
+        //     // Clear dates if not a hotel
+        //     checkInDate = null;
+        //     checkOutDate = null;
+        // }
 
         try {
             const response = await fetch('https://rentmenaija-a4ed.onrender.com/api/transactions/save/', {
@@ -385,9 +384,10 @@
                 headers: getHeaders(),
                 body: JSON.stringify({
                     listing_type: listingType,
-                    listing_id: listingId,
-                    check_in_date: checkInDate,
-                    check_out_date: checkOutDate
+                    listing_id: listingId
+                    // *** CHANGED LOGIC: Do not send dates for save booking ***
+                    // check_in_date: checkInDate,
+                    // check_out_date: checkOutDate
                 })
             });
 
@@ -397,8 +397,7 @@
                 showResult('save_booking_result', `Booking saved successfully! ID: ${data.booking_id}`, false);
                 // Clear the form
                 document.getElementById('save_listing_id').value = '';
-                document.getElementById('save_check_in_date').value = '';
-                document.getElementById('save_check_out_date').value = '';
+                // No need to clear dates as they are hidden and optional for save
             } else {
                 showResult('save_booking_result', `Failed to save booking: ${data.error || 'Unknown error'}`, true);
             }
@@ -419,7 +418,7 @@
             return;
         }
 
-        // Validate hotel dates if applicable
+        // Validate hotel dates if applicable (this part remains for payment)
         if (listingType === 'hotel_listing') {
             if (!checkInDate || !checkOutDate) {
                 showResult('payment_result', 'Please enter both check-in and check-out dates for hotels.', true);
