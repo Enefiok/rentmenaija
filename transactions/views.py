@@ -17,6 +17,7 @@ from datetime import timedelta
 from .models import LeasePayment, Booking # Import the new model from *this* app
 from listings.models import PropertyDraft, Property # Import Landlord Listing models (draft and published)
 from agent_listings.models import AgentPropertyDraft, AgentProperty # Import Agent Listing models (draft and published)
+from hotels.models import HotelListing 
 
 logger = logging.getLogger(__name__)
 
@@ -446,8 +447,9 @@ def save_booking(request):
     }
     
     if listing_type == 'hotel_listing':
-        booking_data['check_in_date'] = check_in_date
-        booking_data['check_out_date'] = check_out_date
+            # Only store dates if provided; allow null for 'saved' status
+        booking_data['check_in_date'] = check_in_date if check_in_date else None
+        booking_data['check_out_date'] = check_out_date if check_out_date else None
 
     booking = Booking.objects.create(**booking_data)
     logger.info(f"✅ Booking created: ID={booking.id}, User={request.user.username}, Listing={listing_type} ID {listing_id}")
