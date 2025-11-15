@@ -10,41 +10,30 @@ from .models import PropertyDraft, Property
 @admin.register(PropertyDraft)
 class PropertyDraftAdmin(admin.ModelAdmin):
     list_display = (
-        'id',
+        'id',  # Added missing comma here
         'title',
         'user',
+        'monthly_rent',  # Added
         'phone_number',
         'address',
-        'owner_name',
-        'status_with_reason',
-        'monthly_rent',
-        'currency',
-        'lease_term_preference',
-        'phone_number',
-        'short_address',
-        'submitted_at',
-        'image_thumbnail',
-        'description_preview',
-        'known_issues_preview',
-        'house_rules_preview',
-        'signature_info',
-        'is_owner_verified',
-        'details_verified',
-        'fraud_responsible',
-        'allow_escrow_status',
-        'submitted_for_review_status',
-        'bank_name',          # Added
-        'account_number',     # Added
-        'account_name',       # Added
-        'bank_verified_status', # Added
+        'city',
+        'state',
         'submitted_for_review',
-        'created_at'
+        'created_at',
+        'is_owner_or_representative',  # Added
+        'details_accurate',            # Added
+        'allow_escrow',                # Added
+        'bank_verified',               # Added
     )
     list_filter = (
         'submitted_for_review',
         'currency',
         'lease_term_preference',
-        'created_at'
+        'created_at',
+        'is_owner_or_representative',
+        'details_accurate',
+        'allow_escrow',
+        'bank_verified',
     )
     search_fields = (
         'title',
@@ -66,7 +55,7 @@ class PropertyDraftAdmin(admin.ModelAdmin):
             "fields": ("phone_number", "description", "known_issues", "house_rules")
         }),
         ("Location", {
-            "fields": ("address", "latitude", "longitude")
+            "fields": ("address", "latitude", "longitude", "city", "state")
         }),
         ("Images", {
             "fields": ("images",),
@@ -423,7 +412,7 @@ class PropertyAdmin(admin.ModelAdmin):
     def image_thumbnails(self, obj):
         if not obj.draft.images:
             return "No images uploaded."
-        html = "<div style='display: flex; gap: 10px; flex-wrap: wrap;'>"
+        html = "<div style='display: flex; gap: 10px; flex-wrap: wrap;'>";
         for url in obj.draft.images:
             html += f"<img src='{url}' style='width: 150px; height: 120px; object-fit: cover; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);' />"
         html += "</div>"
