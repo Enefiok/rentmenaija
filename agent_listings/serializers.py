@@ -19,9 +19,34 @@ class AgentPropertyDraftSerializer(serializers.ModelSerializer):
         model = AgentPropertyDraft
         exclude = ['created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        """Convert all values to appropriate representation for response"""
+        data = super().to_representation(instance)
+        
+        # Convert numeric values to strings in the response
+        if instance.monthly_rent is not None:
+            data['monthly_rent'] = str(instance.monthly_rent)
+        
+        # Ensure string fields are properly formatted
+        if instance.landlord_phone is not None:
+            data['landlord_phone'] = str(instance.landlord_phone)
+        
+        if instance.owner_account_number is not None:
+            data['owner_account_number'] = str(instance.owner_account_number)
+        
+        # Handle boolean fields if they're causing issues
+        for field_name in ['bank_verified', 'is_owner_or_representative', 'details_accurate', 
+                          'responsible_for_fraud', 'allow_escrow', 'submitted_for_review']:
+            if hasattr(instance, field_name):
+                field_value = getattr(instance, field_name)
+                if field_value is not None:
+                    data[field_name] = bool(field_value)
+        
+        return data
+
     def validate_monthly_rent(self, value):
         """Convert string to Decimal for monthly_rent"""
-        if value is None or value == '' or value == 'null':
+        if value is None or value == '' or value == 'null' or value == 'undefined':
             return None
         try:
             return Decimal(str(value))
@@ -30,31 +55,18 @@ class AgentPropertyDraftSerializer(serializers.ModelSerializer):
 
     def validate_landlord_phone(self, value):
         """Ensure landlord_phone is stored as string"""
-        if value is None or value == '':
+        if value is None or value == '' or value == 'null' or value == 'undefined':
             return None
         return str(value)
 
     def validate_owner_account_number(self, value):
         """Ensure owner_account_number is stored as string"""
-        if value is None or value == '':
+        if value is None or value == '' or value == 'null' or value == 'undefined':
             return None
         return str(value)
 
-    def to_internal_value(self, data):
-        """Handle conversion of string values to appropriate types before saving"""
-        # Make a copy to avoid modifying original data
-        data = data.copy()
-        
-        # Convert monthly_rent to Decimal if it's provided as string
-        if 'monthly_rent' in data and data['monthly_rent'] not in (None, '', 'null'):
-            try:
-                monthly_rent_val = data['monthly_rent']
-                if monthly_rent_val is not None:
-                    data['monthly_rent'] = str(monthly_rent_val)
-            except (ValueError, TypeError):
-                pass
-        
-        return super().to_internal_value(data)
+    # Remove the to_internal_value method - it was interfering with validation
+    # Individual field validators above handle type conversion properly
 
 
 class AgentPropertyAdminSerializer(serializers.ModelSerializer):
