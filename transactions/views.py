@@ -983,4 +983,103 @@ def release_funds(request, booking_id):
             "error": f"An unexpected error occurred: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+
+
+
+
+        # --- NEW: Notification API View ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@csrf_exempt
+def get_booking_notifications(request):
+    """
+    Retrieve a list of notifications related to the user's bookings.
+    These notifications are based on significant status changes or events.
+    """
+    logger.info("🔔 GET_BOOKING_NOTIFICATIONS CALLED")
+    logger.info(f"User: {request.user.email}")
+
+    # Get all bookings for the user, ordered by the most recent event.
+    # We'll look at the 'created_at' timestamp for simplicity, but you could also track a separate 'last_event_at'.
+    bookings = Booking.objects.filter(user=request.user).order_by('-created_at')
+
+    notifications = []
+
+    for booking in bookings:
+        # Create a base notification object with common data.
+        # You might want to add a 'type' field to distinguish between different notification kinds.
+        base_notification = {
+            "booking_id": booking.id,
+            "property_title": booking.property_title,
+            "listing_type": booking.listing_type,
+            "listing_id": booking.listing_id,
+            "created_at": booking.created_at, # Use this as the notification timestamp
+        }
+
+        # Determine the notification type and content based on the booking's current status and history.
+        # Since we don't have a separate event log, we infer from the status and timestamps.
+
+        if booking.status == 'saved':
+            # A 'saved' booking might not generate a notification unless it's the first time.
+            # For simplicity, we can skip notifications for 'saved' status unless you have a specific rule.
+            continue  # Skip for now, or add logic for "Property Added to Cart" if desired.
+
+        elif booking.status == 'paid_pending_confirmation':
+            # Payment was successful.
+            notification = base_notification.copy()
+            notification.update({
+                "type": "payment_successful",
+                "title": "Payment Successful!",
+                "message": f"N{booking.initial_amount_paid_ngn:,} received. Property held in escrow.",
+                "icon": "payment", # You can define icons for your frontend
+                "action_needed": True, # Indicate if an action is required
+                "action_button_text": "Confirm Booking",
+                "action_url": f"/bookings/{booking.id}/confirm" # Example URL; adjust to your routing
+            })
+            notifications.append(notification)
+
+        elif booking.status == 'confirmed':
+            # Booking was confirmed.
+            notification = base_notification.copy()
+            notification.update({
+                "type": "booking_confirmed",
+                "title": "Booking Confirmed",
+                "message": f"Your reservation for {booking.property_title} is confirmed. Check-in: {booking.check_in_date} to {booking.check_out_date}.",
+                "icon": "check",
+                "action_needed": False,
+            })
+            notifications.append(notification)
+
+        elif booking.status == 'cancelled':
+            # Booking was cancelled.
+            notification = base_notification.copy()
+            notification.update({
+                "type": "booking_cancelled",
+                "title": "Booking Cancelled",
+                "message": f"Your reservation for {booking.property_title} has been cancelled. A refund has been requested.",
+                "icon": "cancel",
+                "action_needed": False,
+            })
+            notifications.append(notification)
+
+        elif booking.status == 'refunded':
+            # Booking was refunded.
+            notification = base_notification.copy()
+            notification.update({
+                "type": "booking_refunded",
+                "title": "Refund Processed",
+                "message": f"A refund for your booking at {booking.property_title} has been processed.",
+                "icon": "refund",
+                "action_needed": False,
+            })
+            notifications.append(notification)
+
+        # You can add more conditions for other statuses or specific events.
+
+    # Sort notifications by created_at (most recent first)
+    notifications.sort(key=lambda x: x['created_at'], reverse=True)
+
+    return Response(notifications, status=status.HTTP_200_OK)
+
 # You can add more views here later if needed, e.g., for retrieving lease payment status, etc.   

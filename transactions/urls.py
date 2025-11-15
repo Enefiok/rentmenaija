@@ -13,6 +13,7 @@ urlpatterns = [
     path('<int:booking_id>/refund/', views.request_refund, name='request_refund'),
     # ✅ NEW: Fund Release endpoint
     path('<int:booking_id>/release-funds/', views.release_funds, name='release-funds'),
+    path('bookings/notifications/', views.get_booking_notifications, name='get_booking_notifications'),
     # Add other transaction-related URLs here in the future
     # path('lease-payment/<int:id>/', views.get_lease_payment_status, name='get_lease_payment_status'),
 ]
