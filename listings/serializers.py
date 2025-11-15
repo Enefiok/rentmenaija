@@ -10,27 +10,42 @@ class PropertyDraftSerializer(serializers.ModelSerializer):
     monthly_rent = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     owner_account_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    latitude = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    longitude = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     
     class Meta:
         model = PropertyDraft
         exclude = ['created_at', 'updated_at']
 
     def to_representation(self, instance):
-        """Convert Decimal and other types to appropriate representation"""
+        """Convert all values to appropriate representation for response"""
         data = super().to_representation(instance)
         
-        # Ensure monthly_rent is represented as string in the response
+        # Convert numeric values to strings in the response
         if instance.monthly_rent is not None:
             data['monthly_rent'] = str(instance.monthly_rent)
         
-        # Ensure phone_number is represented as string
+        if instance.latitude is not None:
+            data['latitude'] = str(instance.latitude)
+        
+        if instance.longitude is not None:
+            data['longitude'] = str(instance.longitude)
+        
+        # Ensure string fields are properly formatted
         if instance.phone_number is not None:
             data['phone_number'] = str(instance.phone_number)
         
-        # Ensure owner_account_number is represented as string
         if instance.owner_account_number is not None:
             data['owner_account_number'] = str(instance.owner_account_number)
-            
+        
+        # Handle boolean fields if they're causing issues
+        for field_name in ['bank_verified', 'is_owner_or_representative', 'details_accurate', 
+                          'responsible_for_fraud', 'allow_escrow', 'submitted_for_review']:
+            if hasattr(instance, field_name):
+                field_value = getattr(instance, field_name)
+                if field_value is not None:
+                    data[field_name] = bool(field_value)
+        
         return data
 
     def validate_monthly_rent(self, value):
@@ -54,19 +69,36 @@ class PropertyDraftSerializer(serializers.ModelSerializer):
             return None
         return str(value)
 
+    def validate_latitude(self, value):
+        """Convert string to float for latitude"""
+        if value is None or value == '' or value == 'null' or value == 'undefined':
+            return None
+        try:
+            return float(str(value))
+        except (ValueError, TypeError):
+            raise serializers.ValidationError("latitude must be a valid number")
+
+    def validate_longitude(self, value):
+        """Convert string to float for longitude"""
+        if value is None or value == '' or value == 'null' or value == 'undefined':
+            return None
+        try:
+            return float(str(value))
+        except (ValueError, TypeError):
+            raise serializers.ValidationError("longitude must be a valid number")
+
     def to_internal_value(self, data):
         """Handle conversion of string values to appropriate types before saving"""
         # Make a copy to avoid modifying original data
         data = data.copy()
         
-        # Convert monthly_rent to Decimal if it's provided as string
-        if 'monthly_rent' in data and data['monthly_rent'] not in (None, '', 'null', 'undefined'):
-            try:
-                monthly_rent_val = data['monthly_rent']
-                if monthly_rent_val is not None:
-                    data['monthly_rent'] = str(monthly_rent_val)
-            except (ValueError, TypeError):
-                pass
+        # Convert numeric fields that might come as strings
+        for field_name in ['monthly_rent', 'latitude', 'longitude']:
+            if field_name in data and data[field_name] not in (None, '', 'null', 'undefined'):
+                try:
+                    data[field_name] = str(data[field_name])
+                except (ValueError, TypeError):
+                    pass
         
         return super().to_internal_value(data)
 
