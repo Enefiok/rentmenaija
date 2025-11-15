@@ -15,9 +15,27 @@ class PropertyDraftSerializer(serializers.ModelSerializer):
         model = PropertyDraft
         exclude = ['created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        """Convert Decimal and other types to appropriate representation"""
+        data = super().to_representation(instance)
+        
+        # Ensure monthly_rent is represented as string in the response
+        if instance.monthly_rent is not None:
+            data['monthly_rent'] = str(instance.monthly_rent)
+        
+        # Ensure phone_number is represented as string
+        if instance.phone_number is not None:
+            data['phone_number'] = str(instance.phone_number)
+        
+        # Ensure owner_account_number is represented as string
+        if instance.owner_account_number is not None:
+            data['owner_account_number'] = str(instance.owner_account_number)
+            
+        return data
+
     def validate_monthly_rent(self, value):
         """Convert string to Decimal for monthly_rent"""
-        if value is None or value == '' or value == 'null':
+        if value is None or value == '' or value == 'null' or value == 'undefined':
             return None
         try:
             return Decimal(str(value))
@@ -26,13 +44,13 @@ class PropertyDraftSerializer(serializers.ModelSerializer):
 
     def validate_phone_number(self, value):
         """Ensure phone_number is stored as string"""
-        if value is None or value == '':
+        if value is None or value == '' or value == 'null' or value == 'undefined':
             return None
         return str(value)
 
     def validate_owner_account_number(self, value):
         """Ensure owner_account_number is stored as string"""
-        if value is None or value == '':
+        if value is None or value == '' or value == 'null' or value == 'undefined':
             return None
         return str(value)
 
@@ -42,7 +60,7 @@ class PropertyDraftSerializer(serializers.ModelSerializer):
         data = data.copy()
         
         # Convert monthly_rent to Decimal if it's provided as string
-        if 'monthly_rent' in data and data['monthly_rent'] not in (None, '', 'null'):
+        if 'monthly_rent' in data and data['monthly_rent'] not in (None, '', 'null', 'undefined'):
             try:
                 monthly_rent_val = data['monthly_rent']
                 if monthly_rent_val is not None:
