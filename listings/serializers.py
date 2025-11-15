@@ -87,20 +87,8 @@ class PropertyDraftSerializer(serializers.ModelSerializer):
         except (ValueError, TypeError):
             raise serializers.ValidationError("longitude must be a valid number")
 
-    def to_internal_value(self, data):
-        """Handle conversion of string values to appropriate types before saving"""
-        # Make a copy to avoid modifying original data
-        data = data.copy()
-        
-        # Convert numeric fields that might come as strings
-        for field_name in ['monthly_rent', 'latitude', 'longitude']:
-            if field_name in data and data[field_name] not in (None, '', 'null', 'undefined'):
-                try:
-                    data[field_name] = str(data[field_name])
-                except (ValueError, TypeError):
-                    pass
-        
-        return super().to_internal_value(data)
+    # The to_internal_value method was removed because it was interfering with validation
+    # Individual field validators above handle type conversion properly
 
 
 class PropertyAdminSerializer(serializers.ModelSerializer):
