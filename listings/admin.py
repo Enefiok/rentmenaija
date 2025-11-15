@@ -15,6 +15,28 @@ class PropertyDraftAdmin(admin.ModelAdmin):
         'user',
         'phone_number',
         'address',
+        'owner_name',
+        'status_with_reason',
+        'monthly_rent',
+        'currency',
+        'lease_term_preference',
+        'phone_number',
+        'short_address',
+        'submitted_at',
+        'image_thumbnail',
+        'description_preview',
+        'known_issues_preview',
+        'house_rules_preview',
+        'signature_info',
+        'is_owner_verified',
+        'details_verified',
+        'fraud_responsible',
+        'allow_escrow_status',
+        'submitted_for_review_status',
+        'bank_name',          # Added
+        'account_number',     # Added
+        'account_name',       # Added
+        'bank_verified_status', # Added
         'submitted_for_review',
         'created_at'
     )
